@@ -3,3 +3,4 @@ node_modules/
 canvas.json
 canvas.bin
 .env
+*.dat
