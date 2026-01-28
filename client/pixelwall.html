@@ -1,1326 +1,1992 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PixelBattle Wallpaper</title>
-    <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-        user-select: none;
-        -webkit-user-select: none;
-      }
-
-      body {
-        overflow: hidden;
-        width: 100vw;
-        height: 100vh;
-        background: #000;
-        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-        cursor: crosshair;
-      }
-
-      #mainCanvas {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        image-rendering: pixelated;
-        image-rendering: crisp-edges;
-      }
-
-      /* Статус бар */
-      #statusBar {
-        position: absolute;
-        top: 10px;
-        right: 10px;
-        background: rgba(0, 0, 0, 0.7);
-        color: white;
-        padding: 8px 12px;
-        border-radius: 6px;
-        font-size: 12px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        z-index: 100;
-        backdrop-filter: blur(4px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        transition: opacity 0.3s;
-      }
-
-      #statusBar:hover {
-        background: rgba(0, 0, 0, 0.85);
-      }
-
-      .status-item {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-      }
-
-      .status-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-      }
-
-      .connected .status-dot {
-        background: #4caf50;
-      }
-      .connecting .status-dot {
-        background: #ff9800;
-      }
-      .disconnected .status-dot {
-        background: #f44336;
-      }
-
-      #cooldownTimer {
-        color: #ff9800;
-        font-weight: bold;
-      }
-
-      /* Улучшенная панель цветов */
-      #colorPalette {
-        position: absolute;
-        top: 50px;
-        right: 10px;
-        width: 40px;
-        background: rgba(0, 0, 0, 0.8);
-        border-radius: 8px;
-        backdrop-filter: blur(8px);
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        z-index: 100;
-        overflow: hidden;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-      }
-
-      #colorPalette.expanded {
-        width: 160px;
-        padding: 10px;
-      }
-
-      .palette-header {
-        padding: 8px;
-        cursor: pointer;
-        text-align: center;
-        color: white;
-        font-size: 12px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        background: rgba(0, 0, 0, 0.6);
-        transition: background 0.3s;
-      }
-
-      .palette-header:hover {
-        background: rgba(255, 255, 255, 0.1);
-      }
-
-      .palette-content {
-        max-height: 0;
-        overflow: hidden;
-        transition: max-height 0.3s ease;
-      }
-
-      #colorPalette.expanded .palette-content {
-        max-height: 320px;
-        padding-top: 10px;
-      }
-
-      .palette-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 5px;
-      }
-
-      .color-swatch {
-        width: 30px;
-        height: 30px;
-        border-radius: 6px;
-        cursor: pointer;
-        border: 2px solid transparent;
-        transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
-      }
-
-      .color-swatch:hover {
-        transform: scale(1.15);
-      }
-
-      .color-swatch.selected {
-        border-color: white;
-        transform: scale(1.1);
-        box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
-      }
-
-      /* Пипетка (цвет под курсором) */
-      #colorPickerPreview {
-        position: absolute;
-        bottom: 20px;
-        left: 20px;
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        border: 3px solid white;
-        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-        z-index: 100;
-        pointer-events: none;
-        opacity: 0.8;
-      }
-
-      #colorPickerHex {
-        position: absolute;
-        bottom: 25px;
-        left: 70px;
-        background: rgba(0, 0, 0, 0.7);
-        color: white;
-        padding: 5px 10px;
-        border-radius: 4px;
-        font-size: 12px;
-        font-family: monospace;
-        pointer-events: none;
-      }
-
-      /* Лупа/зум */
-      #zoomPreview {
-        position: absolute;
-        width: 200px;
-        height: 200px;
-        border: 2px solid white;
-        border-radius: 4px;
-        background: rgba(0, 0, 0, 0.9);
-        backdrop-filter: blur(2px);
-        box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
-        z-index: 150;
-        pointer-events: none;
-        display: none;
-        overflow: hidden;
-      }
-
-      #zoomCanvas {
-        width: 100%;
-        height: 100%;
-        image-rendering: pixelated;
-      }
-
-      .zoom-grid {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: repeating-linear-gradient(
-            90deg,
-            rgba(255, 255, 255, 0.1) 0,
-            rgba(255, 255, 255, 0.1) 1px,
-            transparent 1px,
-            transparent calc(100% / 10)
-          ),
-          repeating-linear-gradient(
-            0deg,
-            rgba(255, 255, 255, 0.1) 0,
-            rgba(255, 255, 255, 0.1) 1px,
-            transparent 1px,
-            transparent calc(100% / 10)
-          );
-        pointer-events: none;
-      }
-
-      #zoomPosition {
-        position: absolute;
-        bottom: -25px;
-        left: 0;
-        right: 0;
-        text-align: center;
-        color: white;
-        font-size: 12px;
-        background: rgba(0, 0, 0, 0.7);
-        padding: 2px 5px;
-        border-radius: 3px;
-      }
-
-      /* Туториал и уведомления */
-      #tutorial {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: rgba(0, 0, 0, 0.9);
-        color: white;
-        padding: 20px;
-        border-radius: 12px;
-        max-width: 400px;
-        text-align: center;
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        z-index: 1000;
-        animation: fadeIn 0.5s;
-      }
-
-      .notification {
-        position: absolute;
-        top: 60px;
-        right: 10px;
-        background: rgba(0, 0, 0, 0.85);
-        color: white;
-        padding: 12px 16px;
-        border-radius: 8px;
-        backdrop-filter: blur(8px);
-        border-left: 4px solid #4caf50;
-        z-index: 100;
-        animation: slideInRight 0.3s, fadeOut 0.3s 2.7s;
-        max-width: 300px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-      }
-
-      .notification.error {
-        border-left-color: #f44336;
-      }
-
-      .notification.warning {
-        border-left-color: #ff9800;
-      }
-
-      /* Анимации */
-      @keyframes fadeIn {
-        from {
-          opacity: 0;
-        }
-        to {
-          opacity: 1;
-        }
-      }
-
-      @keyframes slideInRight {
-        from {
-          transform: translateX(100%);
-          opacity: 0;
-        }
-        to {
-          transform: translateX(0);
-          opacity: 1;
-        }
-      }
-
-      @keyframes fadeOut {
-        to {
-          opacity: 0;
-        }
-      }
-
-      /* Лоадер */
-      #loader {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        text-align: center;
-        color: white;
-        z-index: 1000;
-      }
-
-      .spinner {
-        border: 4px solid rgba(255, 255, 255, 0.3);
-        border-top: 4px solid #4caf50;
-        border-radius: 50%;
-        width: 40px;
-        height: 40px;
-        animation: spin 1s linear infinite;
-        margin: 0 auto 15px;
-      }
-
-      @keyframes spin {
-        0% {
-          transform: rotate(0deg);
-        }
-        100% {
-          transform: rotate(360deg);
-        }
-      }
-
-      /* Скрытые элементы */
-      .hidden {
-        display: none !important;
-      }
-
-      /* Настройки */
-      #settingsPanel {
-        position: absolute;
-        bottom: 20px;
-        right: 60px;
-        background: rgba(0, 0, 0, 0.8);
-        color: white;
-        padding: 10px;
-        border-radius: 8px;
-        backdrop-filter: blur(8px);
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        z-index: 90;
-        opacity: 0.3;
-        transition: opacity 0.3s;
-      }
-
-      #settingsPanel:hover {
-        opacity: 1;
-      }
-
-      .settings-item {
-        margin: 5px 0;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-
-      .settings-item label {
-        font-size: 12px;
-        min-width: 100px;
-      }
-
-      input[type="range"] {
-        width: 120px;
-      }
-    </style>
-  </head>
-  <body>
-    <canvas id="mainCanvas"></canvas>
-
-    <!-- Статус бар -->
-    <div id="statusBar" class="connected">
-      <div class="status-item">
-        <span class="status-dot"></span>
-        <span id="statusText">Connected</span>
-      </div>
-      <div class="status-item">
-        <span>Next:</span>
-        <span id="cooldownTimer">0s</span>
-      </div>
-      <div class="status-item">
-        <span>Online:</span>
-        <span id="onlineCount">0</span>
-      </div>
-    </div>
-
-    <!-- Улучшенная палитра цветов -->
-    <div id="colorPalette">
-      <div class="palette-header" id="togglePalette">🎨</div>
-      <div class="palette-content">
-        <div class="palette-grid">
-          <!-- Цвета будут добавлены скриптом -->
-        </div>
-      </div>
-    </div>
-
-    <!-- Пипетка -->
-    <div id="colorPickerPreview"></div>
-    <div id="colorPickerHex">#000000</div>
-
-    <!-- Лупа/зум -->
-    <div id="zoomPreview">
-      <canvas id="zoomCanvas"></canvas>
-      <div class="zoom-grid"></div>
-      <div id="zoomPosition">0, 0</div>
-    </div>
-
-    <!-- Панель настроек -->
-    <div id="settingsPanel">
-      <div class="settings-item">
-        <label for="gridSize">Grid Size:</label>
-        <input type="range" id="gridSize" min="1" max="20" value="6" step="1" />
-        <span id="gridSizeValue">6px</span>
-      </div>
-      <div class="settings-item">
-        <label for="zoomEnabled">Zoom:</label>
-        <input type="checkbox" id="zoomEnabled" checked />
-      </div>
-      <div class="settings-item">
-        <label for="snapToGrid">Snap to Grid:</label>
-        <input type="checkbox" id="snapToGrid" checked />
-      </div>
-    </div>
-
-    <!-- Туториал -->
-    <div id="tutorial" class="hidden">
-      <h3>🎨 PixelBattle Wallpaper</h3>
-      <p>Interactive multiplayer pixel canvas for your desktop!</p>
-      <ul>
-        <li><strong>Click</strong> - Place pixel</li>
-        <li><strong>Right click</strong> - Pick color</li>
-        <li><strong>Ctrl+Click</strong> - Fill area</li>
-        <li><strong>Z</strong> - Toggle zoom</li>
-        <li><strong>C</strong> - Toggle color picker</li>
-        <li><strong>Esc</strong> - Hide interface</li>
-      </ul>
-      <button id="closeTutorial">Start Drawing!</button>
-    </div>
-
-    <!-- Лоадер -->
-    <div id="loader">
-      <div class="spinner"></div>
-      <div>Connecting to PixelBattle server...</div>
-      <div
-        id="loaderStatus"
-        style="font-size: 12px; margin-top: 10px; opacity: 0.8"
-      >
-        Establishing connection
-      </div>
-    </div>
-
-    <script>
-      class PixelBattleWallpaper {
-        constructor() {
-          this.canvas = document.getElementById("mainCanvas");
-          this.ctx = this.canvas.getContext("2d");
-          this.ws = null;
-
-          // Настройки
-          this.gridSize = 4; // Размер сетки в экранных пикселях
-          this.canvasWidth = 800; // Увеличиваем виртуальный холст для лучшей детализации
-          this.canvasHeight = 450; // Сохраняем соотношение 16:9
-          this.cooldownTime = 1000; // 30 секунд
-          this.zoomEnabled = true;
-          this.snapToGrid = true;
-          this.zoomLevel = 10; // Увеличение лупы 
-
-          // Состояние
-          this.grid = [];
-          this.lastClickTime = 0;
-          this.selectedColor = 0;
-          this.isConnected = false;
-          this.usersOnline = 0;
-
-          // Цвет под курсором
-          this.pickedColor = null;
-          this.showColorPicker = true;
-
-          // Панель управления
-          this.uiVisible = true;
-
-          // Настройки сервера
-          this.serverConfig = {
-            host: "localhost",
-            port: 8080,
-            secure: false,
-            path: "/ws",
-          };
-
-          // Инициализация
-          this.init();
-        }
-
-        init() {
-          // Инициализация холста
-          this.resizeCanvas();
-          window.addEventListener("resize", () => this.resizeCanvas());
-
-          // Инициализация сетки
-          this.initGrid();
-
-          // Инициализация палитры
-          this.initPalette();
-
-          // Инициализация лупы
-          this.initZoom();
-
-          // Настройка событий
-          this.setupEventListeners();
-
-          // Показать туториал при первом запуске
-          if (!localStorage.getItem("pixelwall_tutorial_shown")) {
-            setTimeout(() => {
-              document.getElementById("tutorial").classList.remove("hidden");
-              localStorage.setItem("pixelwall_tutorial_shown", "true");
-            }, 1000);
-          }
-
-          // Подключиться к серверу
-          this.connectToServer();
-
-          // Запуск анимации
-          this.animate();
-        }
-
-        initGrid() {
-          // Создаем пустую сетку
-          this.grid = new Array(this.canvasWidth * this.canvasHeight).fill(0);
-          this.drawTestPattern();
-        }
-
-        drawTestPattern() {
-          // Шахматная доска
-          for (let x = 0; x < this.canvasWidth; x++) {
-            for (let y = 0; y < this.canvasHeight; y++) {
-              if ((x + y) % 8 === 0) {
-                const index = y * this.canvasWidth + x;
-                this.grid[index] = 7; // Серый
-              }
-            }
-          }
-
-          // Рисуем текст
-          const text = "PIXEL BATTLE";
-          const startX = Math.floor(this.canvasWidth / 2) - 30;
-          const startY = Math.floor(this.canvasHeight / 2) - 5;
-
-          const font = [
-            // P
-            [1, 1, 1, 1, 0],
-            [1, 0, 0, 0, 1],
-            [1, 1, 1, 1, 0],
-            [1, 0, 0, 0, 0],
-            [1, 0, 0, 0, 0],
-            // I
-            [1, 1, 1, 1, 1],
-            [0, 0, 1, 0, 0],
-            [0, 0, 1, 0, 0],
-            [0, 0, 1, 0, 0],
-            [1, 1, 1, 1, 1],
-            // X
-            [1, 0, 0, 0, 1],
-            [0, 1, 0, 1, 0],
-            [0, 0, 1, 0, 0],
-            [0, 1, 0, 1, 0],
-            [1, 0, 0, 0, 1],
-            // E
-            [1, 1, 1, 1, 1],
-            [1, 0, 0, 0, 0],
-            [1, 1, 1, 0, 0],
-            [1, 0, 0, 0, 0],
-            [1, 1, 1, 1, 1],
-            // L
-            [1, 0, 0, 0, 0],
-            [1, 0, 0, 0, 0],
-            [1, 0, 0, 0, 0],
-            [1, 0, 0, 0, 0],
-            [1, 1, 1, 1, 1],
-          ];
-
-          for (let char = 0; char < 12; char++) {
-            for (let x = 0; x < 5; x++) {
-              for (let y = 0; y < 5; y++) {
-                if (char < 12) {
-                  const gridX = startX + char * 6 + x;
-                  const gridY = startY + y;
-                  if (font[y] && font[y][x]) {
-                    const index = gridY * this.canvasWidth + gridX;
-                    if (index >= 0 && index < this.grid.length) {
-                      this.grid[index] = (char % 16) + 1;
-                    }
-                  }
-                }
-              }
-            }
-          }
-
-          this.renderGrid();
-        }
-
-        getColorPalette() {
-          return [
-            "#000000",
-            "#1A1A1A",
-            "#333333",
-            "#4D4D4D",
-            "#666666",
-            "#808080",
-            "#999999",
-            "#B3B3B3",
-            "#CCCCCC",
-            "#E6E6E6",
-            "#FFFFFF",
-            "#FF0000",
-            "#FF3300",
-            "#FF6600",
-            "#FF9900",
-            "#FFCC00",
-            "#FFFF00",
-            "#CCFF00",
-            "#99FF00",
-            "#66FF00",
-            "#33FF00",
-            "#00FF00",
-            "#00FF33",
-            "#00FF66",
-            "#00FF99",
-            "#00FFCC",
-            "#00FFFF",
-            "#00CCFF",
-            "#0099FF",
-            "#0066FF",
-            "#0033FF",
-            "#0000FF",
-            "#3300FF",
-            "#6600FF",
-            "#9900FF",
-            "#CC00FF",
-            "#FF00FF",
-            "#FF00CC",
-            "#FF0099",
-            "#FF0066",
-          ];
-        }
-
-        initPalette() {
-          const paletteGrid = document.querySelector(".palette-grid");
-          const colors = this.getColorPalette();
-
-          colors.forEach((color, index) => {
-            const swatch = document.createElement("div");
-            swatch.className = "color-swatch";
-            if (index === this.selectedColor) {
-              swatch.classList.add("selected");
-            }
-            swatch.style.backgroundColor = color;
-            swatch.dataset.index = index;
-
-            swatch.addEventListener("click", () => {
-              this.selectedColor = index;
-              document.querySelectorAll(".color-swatch").forEach((s) => {
-                s.classList.remove("selected");
-              });
-              swatch.classList.add("selected");
-            });
-
-            paletteGrid.appendChild(swatch);
-          });
-
-          // Переключение палитры
-          document
-            .getElementById("togglePalette")
-            .addEventListener("click", () => {
-              const palette = document.getElementById("colorPalette");
-              palette.classList.toggle("expanded");
-              document.getElementById("togglePalette").textContent =
-                palette.classList.contains("expanded") ? "✕" : "🎨";
-            });
-        }
-
-        initZoom() {
-          this.zoomCanvas = document.getElementById("zoomCanvas");
-          this.zoomCtx = this.zoomCanvas.getContext("2d");
-          this.zoomCanvas.width = 200;
-          this.zoomCanvas.height = 200;
-        }
-
-        resizeCanvas() {
-          this.canvas.width = window.innerWidth;
-          this.canvas.height = window.innerHeight;
-          this.renderGrid();
-        }
-
-        setupEventListeners() {
-          // Клик по холсту
-          this.canvas.addEventListener("click", (e) => {
-            this.handleCanvasClick(e);
-          });
-
-          // Правый клик для пипетки
-          this.canvas.addEventListener("contextmenu", (e) => {
-            e.preventDefault();
-            this.handleColorPick(e);
-          });
-
-          // Движение мыши для лупы
-          this.canvas.addEventListener("mousemove", (e) => {
-            this.handleMouseMove(e);
-          });
-
-          // Клавиши
-          document.addEventListener("keydown", (e) => {
-            this.handleKeyDown(e);
-          });
-
-          // Настройки
-          document.getElementById("gridSize").addEventListener("input", (e) => {
-            this.gridSize = parseInt(e.target.value);
-            document.getElementById("gridSizeValue").textContent =
-              this.gridSize + "px";
-            this.renderGrid();
-          });
-
-          document
-            .getElementById("zoomEnabled")
-            .addEventListener("change", (e) => {
-              this.zoomEnabled = e.target.checked;
-              document.getElementById("zoomPreview").style.display = this
-                .zoomEnabled
-                ? "block"
-                : "none";
-            });
-
-          document
-            .getElementById("snapToGrid")
-            .addEventListener("change", (e) => {
-              this.snapToGrid = e.target.checked;
-            });
-
-          // Закрыть туториал
-          document
-            .getElementById("closeTutorial")
-            .addEventListener("click", () => {
-              document.getElementById("tutorial").classList.add("hidden");
-            });
-
-          // Перемещение цветовой палитры
-          this.makeDraggable("colorPalette");
-        }
-
-        makeDraggable(elementId) {
-          const element = document.getElementById(elementId);
-          let isDragging = false;
-          let startX, startY, startLeft, startTop;
-
-          element.style.position = "absolute";
-          element.style.cursor = "move";
-
-          element.addEventListener("mousedown", (e) => {
-            if (e.target.classList.contains("palette-header")) {
-              isDragging = true;
-              startX = e.clientX;
-              startY = e.clientY;
-              startLeft = element.offsetLeft;
-              startTop = element.offsetTop;
-              e.preventDefault();
-            }
-          });
-
-          document.addEventListener("mousemove", (e) => {
-            if (isDragging) {
-              const dx = e.clientX - startX;
-              const dy = e.clientY - startY;
-              element.style.left = startLeft + dx + "px";
-              element.style.top = startTop + dy + "px";
-              element.style.right = "auto";
-            }
-          });
-
-          document.addEventListener("mouseup", () => {
-            isDragging = false;
-          });
-        }
-
-        handleCanvasClick(e) {
-          const now = Date.now();
-          const timeSinceLastClick = now - this.lastClickTime;
-
-          // Проверка кулдауна
-          if (timeSinceLastClick < this.cooldownTime) {
-            const secondsLeft = Math.ceil(
-              (this.cooldownTime - timeSinceLastClick) / 1000
-            );
-            this.showNotification(
-              `Wait ${secondsLeft}s before placing next pixel`,
-              "warning"
-            );
-            return;
-          }
-
-          // Получаем координаты
-          const rect = this.canvas.getBoundingClientRect();
-          const x = Math.floor((e.clientX - rect.left) / this.gridSize);
-          const y = Math.floor((e.clientY - rect.top) / this.gridSize);
-
-          // Пересчитываем в координаты сетки
-          const gridX = Math.floor(
-            (x * this.canvasWidth) /
-              Math.floor(this.canvas.width / this.gridSize)
-          );
-          const gridY = Math.floor(
-            (y * this.canvasHeight) /
-              Math.floor(this.canvas.height / this.gridSize)
-          );
-
-          // Привязка к сетке
-          const finalGridX = this.snapToGrid
-            ? Math.round(gridX / 2) * 2
-            : gridX;
-          const finalGridY = this.snapToGrid
-            ? Math.round(gridY / 2) * 2
-            : gridY;
-
-          // Проверка границ
-          if (
-            finalGridX < 0 ||
-            finalGridX >= this.canvasWidth ||
-            finalGridY < 0 ||
-            finalGridY >= this.canvasHeight
-          ) {
-            return;
-          }
-
-          // Обновляем локально
-          const index = finalGridY * this.canvasWidth + finalGridX;
-          this.grid[index] = this.selectedColor;
-          this.lastClickTime = now;
-          this.updateCooldownTimer();
-
-          // Отрисовываем
-          this.drawPixel(finalGridX, finalGridY, this.selectedColor);
-
-          // Отправляем на сервер
-          if (
-            this.isConnected &&
-            this.ws &&
-            this.ws.readyState === WebSocket.OPEN
-          ) {
-            this.ws.send(
-              JSON.stringify({
-                type: "placePixel",
-                x: finalGridX,
-                y: finalGridY,
-                color: this.selectedColor,
-                timestamp: now,
-              })
-            );
-
-            this.showNotification(
-              `Pixel placed at (${finalGridX}, ${finalGridY})`
-            );
-          }
-        }
-
-        handleColorPick(e) {
-          e.preventDefault();
-          const rect = this.canvas.getBoundingClientRect();
-          const x = Math.floor((e.clientX - rect.left) / this.gridSize);
-          const y = Math.floor((e.clientY - rect.top) / this.gridSize);
-
-          const gridX = Math.floor(
-            (x * this.canvasWidth) /
-              Math.floor(this.canvas.width / this.gridSize)
-          );
-          const gridY = Math.floor(
-            (y * this.canvasHeight) /
-              Math.floor(this.canvas.height / this.gridSize)
-          );
-
-          if (
-            gridX >= 0 &&
-            gridX < this.canvasWidth &&
-            gridY >= 0 &&
-            gridY < this.canvasHeight
-          ) {
-            const index = gridY * this.canvasWidth + gridX;
-            const colorIndex = this.grid[index];
-            const colors = this.getColorPalette();
-
-            this.selectedColor = colorIndex;
-            this.pickedColor = colors[colorIndex];
-
-            // Обновляем UI
-            document.querySelectorAll(".color-swatch").forEach((s) => {
-              s.classList.remove("selected");
-              if (parseInt(s.dataset.index) === colorIndex) {
-                s.classList.add("selected");
-              }
-            });
-
-            document.getElementById(
-              "colorPickerPreview"
-            ).style.backgroundColor = this.pickedColor;
-            document.getElementById("colorPickerHex").textContent =
-              this.pickedColor;
-
-            this.showNotification(`Color picked: ${this.pickedColor}`);
-          }
-        }
-
-        handleMouseMove(e) {
-          const rect = this.canvas.getBoundingClientRect();
-          const mouseX = e.clientX - rect.left;
-          const mouseY = e.clientY - rect.top;
-
-          // Обновляем лупу
-          if (this.zoomEnabled) {
-            this.updateZoom(mouseX, mouseY);
-          }
-
-          // Обновляем пипетку
-          if (this.showColorPicker) {
-            this.updateColorPicker(mouseX, mouseY);
-          }
-        }
-
-        updateZoom(mouseX, mouseY) {
-          if (!this.zoomCtx) return;
-          const zoom = document.getElementById("zoomPreview");
-          const zoomSize = 200;
-          const zoomOffset = 20;
-
-          // Позиция лупы
-          let zoomX = mouseX + zoomOffset;
-          let zoomY = mouseY + zoomOffset;
-
-          // Если лупа выходит за пределы экрана, смещаем
-          if (zoomX + zoomSize > window.innerWidth) {
-            zoomX = mouseX - zoomSize - zoomOffset;
-          }
-          if (zoomY + zoomSize > window.innerHeight) {
-            zoomY = mouseY - zoomSize - zoomOffset;
-          }
-
-          zoom.style.left = zoomX + "px";
-          zoom.style.top = zoomY + "px";
-          zoom.style.display = "block";
-
-          // Отрисовка увеличенной области
-          const zoomRectSize = zoomSize / this.zoomLevel;
-          const startX = Math.max(0, mouseX - zoomRectSize / 2);
-          const startY = Math.max(0, mouseY - zoomRectSize / 2);
-
-          // Очищаем zoom canvas
-          this.zoomCtx.fillStyle = "#000";
-          this.zoomCtx.fillRect(0, 0, zoomSize, zoomSize);
-
-          // Рисуем увеличенную область
-          this.zoomCtx.imageSmoothingEnabled = false;
-
-          // Создаем временный канвас для увеличения
-          const tempCanvas = document.createElement("canvas");
-          const tempCtx = tempCanvas.getContext("2d");
-          tempCanvas.width = zoomRectSize;
-          tempCanvas.height = zoomRectSize;
-
-          // Копируем область с основного канваса
-          tempCtx.drawImage(
-            this.canvas,
-            startX,
-            startY,
-            zoomRectSize,
-            zoomRectSize,
-            0,
-            0,
-            zoomRectSize,
-            zoomRectSize
-          );
-
-          // Масштабируем на zoom canvas
-          this.zoomCtx.drawImage(
-            tempCanvas,
-            0,
-            0,
-            zoomRectSize,
-            zoomRectSize,
-            0,
-            0,
-            zoomSize,
-            zoomSize
-          );
-
-          // Координаты в сетке
-          const gridX = Math.floor(startX / this.gridSize);
-          const gridY = Math.floor(startY / this.gridSize);
-          const finalGridX = Math.floor(
-            (gridX * this.canvasWidth) /
-              Math.floor(this.canvas.width / this.gridSize)
-          );
-          const finalGridY = Math.floor(
-            (gridY * this.canvasHeight) /
-              Math.floor(this.canvas.height / this.gridSize)
-          );
-
-          document.getElementById(
-            "zoomPosition"
-          ).textContent = `${finalGridX}, ${finalGridY}`;
-
-          // Рисуем перекрестие
-          this.zoomCtx.strokeStyle = "rgba(255, 255, 255, 0.5)";
-          this.zoomCtx.lineWidth = 1;
-          this.zoomCtx.beginPath();
-          this.zoomCtx.moveTo(zoomSize / 2, 0);
-          this.zoomCtx.lineTo(zoomSize / 2, zoomSize);
-          this.zoomCtx.moveTo(0, zoomSize / 2);
-          this.zoomCtx.lineTo(zoomSize, zoomSize / 2);
-          this.zoomCtx.stroke();
-        }
-
-        updateColorPicker(mouseX, mouseY) {
-          const gridX = Math.floor(mouseX / this.gridSize);
-          const gridY = Math.floor(mouseY / this.gridSize);
-
-          const finalGridX = Math.floor(
-            (gridX * this.canvasWidth) /
-              Math.floor(this.canvas.width / this.gridSize)
-          );
-          const finalGridY = Math.floor(
-            (gridY * this.canvasHeight) /
-              Math.floor(this.canvas.height / this.gridSize)
-          );
-
-          if (
-            finalGridX >= 0 &&
-            finalGridX < this.canvasWidth &&
-            finalGridY >= 0 &&
-            finalGridY < this.canvasHeight
-          ) {
-            const index = finalGridY * this.canvasWidth + finalGridX;
-            const colorIndex = this.grid[index];
-            const colors = this.getColorPalette();
-            const color = colors[colorIndex];
-
-            document.getElementById(
-              "colorPickerPreview"
-            ).style.backgroundColor = color;
-            document.getElementById("colorPickerHex").textContent = color;
-          }
-        }
-
-        handleKeyDown(e) {
-          switch (e.key.toLowerCase()) {
-            case "z":
-              this.zoomEnabled = !this.zoomEnabled;
-              document.getElementById("zoomPreview").style.display = this
-                .zoomEnabled
-                ? "block"
-                : "none";
-              this.showNotification(
-                `Zoom ${this.zoomEnabled ? "enabled" : "disabled"}`
-              );
-              break;
-
-            case "c":
-              this.showColorPicker = !this.showColorPicker;
-              document.getElementById("colorPickerPreview").style.display = this
-                .showColorPicker
-                ? "block"
-                : "none";
-              document.getElementById("colorPickerHex").style.display = this
-                .showColorPicker
-                ? "block"
-                : "none";
-              this.showNotification(
-                `Color picker ${this.showColorPicker ? "enabled" : "disabled"}`
-              );
-              break;
-
-            case "escape":
-              this.uiVisible = !this.uiVisible;
-              document.getElementById("statusBar").style.display = this
-                .uiVisible
-                ? "flex"
-                : "none";
-              document.getElementById("colorPalette").style.display = this
-                .uiVisible
-                ? "block"
-                : "none";
-              document.getElementById("settingsPanel").style.display = this
-                .uiVisible
-                ? "block"
-                : "none";
-              break;
-
-            case "control":
-              if (e.shiftKey) {
-                // Ctrl+Shift+Click для заливки области
-                this.canvas.addEventListener(
-                  "click",
-                  this.handleFillArea.bind(this),
-                  { once: true }
-                );
-              }
-              break;
-          }
-        }
-
-        drawPixel(x, y, colorIndex) {
-          const colors = this.getColorPalette();
-          const color = colors[colorIndex] || colors[0];
-
-          // Рассчитываем размер и позицию
-          const pixelWidth = this.gridSize;
-          const pixelHeight = this.gridSize;
-
-          const posX = Math.floor(
-            x *
-              pixelWidth *
-              (this.canvas.width / (this.canvasWidth * this.gridSize))
-          );
-          const posY = Math.floor(
-            y *
-              pixelHeight *
-              (this.canvas.height / (this.canvasHeight * this.gridSize))
-          );
-
-          this.ctx.fillStyle = color;
-          this.ctx.fillRect(posX, posY, pixelWidth, pixelHeight);
-
-          // Обновляем лупу если нужно
-          if (this.zoomEnabled) {
-            this.updateZoom(posX + pixelWidth / 2, posY + pixelHeight / 2);
-          }
-        }
-
-        renderGrid() {
-          // Очищаем холст
-          this.ctx.fillStyle = "#000000";
-          this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-          // Рисуем сетку (опционально)
-          if (this.gridSize > 3) {
-            this.ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
-            this.ctx.lineWidth = 1;
-
-            for (let x = 0; x < this.canvas.width; x += this.gridSize) {
-              this.ctx.beginPath();
-              this.ctx.moveTo(x, 0);
-              this.ctx.lineTo(x, this.canvas.height);
-              this.ctx.stroke();
-            }
-
-            for (let y = 0; y < this.canvas.height; y += this.gridSize) {
-              this.ctx.beginPath();
-              this.ctx.moveTo(0, y);
-              this.ctx.lineTo(this.canvas.width, y);
-              this.ctx.stroke();
-            }
-          }
-
-          // Рисуем все пиксели
-          for (let i = 0; i < this.grid.length; i++) {
-            if (this.grid[i] !== 0) {
-              const x = i % this.canvasWidth;
-              const y = Math.floor(i / this.canvasWidth);
-              this.drawPixel(x, y, this.grid[i]);
-            }
-          }
-        }
-
-        connectToServer() {
-          const wsUrl = `ws://${this.serverConfig.host}:${this.serverConfig.port}${this.serverConfig.path}`;
-          // document.getElementById("serverUrl").textContent = wsUrl;
-
-          this.updateStatus("connecting", "Connecting...");
-
-          try {
-            this.ws = new WebSocket(wsUrl);
-
-            this.ws.onopen = () => {
-              this.isConnected = true;
-              this.updateStatus("connected", "Connected");
-              this.showNotification("Connected to PixelBattle server");
-              document.getElementById("loader").classList.add("hidden");
-              this.ws.send(JSON.stringify({ type: "getCanvas" }));
-            };
-
-            this.ws.onmessage = (event) => {
-              try {
-                const data = JSON.parse(event.data);
-                this.handleServerMessage(data);
-              } catch (error) {
-                console.error("Error parsing server message:", error);
-              }
-            };
-
-            this.ws.onclose = () => {
-              this.isConnected = false;
-              this.updateStatus("disconnected", "Disconnected");
-              this.showNotification("Disconnected from server", "error");
-            };
-
-            this.ws.onerror = (error) => {
-              console.error("WebSocket error:", error);
-              this.updateStatus("disconnected", "Connection error");
-            };
-          } catch (error) {
-            console.error("Failed to create WebSocket:", error);
-            this.updateStatus("disconnected", "Connection failed");
-            document.getElementById("loaderStatus").textContent =
-              "Cannot connect to server. Running in offline mode.";
-            setTimeout(() => {
-              document.getElementById("loader").classList.add("hidden");
-            }, 2000);
-          }
-        }
-
-        handleServerMessage(data) {
-          switch (data.type) {
-            case "canvasState":
-              this.loadCanvasState(data.canvas);
-              break;
-
-            case "pixelUpdate":
-              if (
-                data.x >= 0 &&
-                data.x < this.canvasWidth &&
-                data.y >= 0 &&
-                data.y < this.canvasHeight
-              ) {
-                const index = data.y * this.canvasWidth + data.x;
-                this.grid[index] = data.color;
-                this.drawPixel(data.x, data.y, data.color);
-              }
-              break;
-
-            case "onlineCount":
-              this.usersOnline = data.count;
-              document.getElementById("onlineCount").textContent = data.count;
-              break;
-          }
-        }
-
-        loadCanvasState(canvasData) {
-          if (
-            canvasData &&
-            canvasData.width &&
-            canvasData.height &&
-            canvasData.pixels
-          ) {
-            this.grid = canvasData.pixels.slice();
-            this.renderGrid();
-          }
-        }
-
-        updateStatus(status, text) {
-          const statusBar = document.getElementById("statusBar");
-          const statusText = document.getElementById("statusText");
-          statusBar.className = status;
-          statusText.textContent = text;
-        }
-
-        updateCooldownTimer() {
-          const timerElement = document.getElementById("cooldownTimer");
-          const updateTimer = () => {
-            const now = Date.now();
-            const timeLeft = Math.max(
-              0,
-              this.cooldownTime - (now - this.lastClickTime)
-            );
-
-            if (timeLeft <= 0) {
-              timerElement.textContent = "Ready!";
-              timerElement.style.color = "#4CAF50";
-            } else {
-              const seconds = Math.ceil(timeLeft / 1000);
-              timerElement.textContent = `${seconds}s`;
-              timerElement.style.color = seconds <= 5 ? "#4CAF50" : "#FF9800";
-            }
-          };
-
-          updateTimer();
-          if (this.cooldownInterval) clearInterval(this.cooldownInterval);
-          this.cooldownInterval = setInterval(updateTimer, 1000);
-        }
-
-        showNotification(message, type = "info") {
-          const oldNotifications = document.querySelectorAll(".notification");
-          oldNotifications.forEach((n) => n.remove());
-
-          const notification = document.createElement("div");
-          notification.className = `notification ${type}`;
-          notification.textContent = message;
-          document.body.appendChild(notification);
-
-          setTimeout(() => notification.remove(), 3000);
-        }
-
-        animate() {
-          requestAnimationFrame(() => this.animate());
-        }
-      }
-
-      // Инициализация
-      window.addEventListener("load", () => {
-        window.pixelWall = new PixelBattleWallpaper();
-      });
-    </script>
-  </body>
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>PixelBattle Mega Canvas</title>
+		<style>
+			* {
+				margin: 0;
+				padding: 0;
+				box-sizing: border-box;
+				user-select: none;
+				-webkit-user-select: none;
+			}
+
+			body {
+				overflow: hidden;
+				width: 100vw;
+				height: 100vh;
+				background: linear-gradient(45deg, #0a0a0a 0%, #1a1a1a 100%);
+				font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+				cursor: crosshair;
+			}
+
+			#mainCanvas {
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				image-rendering: pixelated;
+				image-rendering: crisp-edges;
+			}
+
+			/* Статус бар - улучшенный */
+			#statusBar {
+				position: absolute;
+				top: 10px;
+				right: 10px;
+				background: rgba(0, 0, 0, 0.85);
+				color: white;
+				padding: 12px 16px;
+				border-radius: 10px;
+				font-size: 12px;
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				z-index: 100;
+				backdrop-filter: blur(10px);
+				border: 1px solid rgba(255, 255, 255, 0.15);
+				box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+				transition: all 0.3s ease;
+			}
+
+			#statusBar:hover {
+				background: rgba(0, 0, 0, 0.95);
+				border-color: rgba(255, 255, 255, 0.25);
+			}
+
+			.status-item {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				white-space: nowrap;
+			}
+
+			.status-dot {
+				width: 8px;
+				height: 8px;
+				border-radius: 50%;
+				transition: background-color 0.3s;
+			}
+
+			.connected .status-dot {
+				background: #4caf50;
+				box-shadow: 0 0 10px #4caf50;
+			}
+			.connecting .status-dot {
+				background: #ff9800;
+				box-shadow: 0 0 10px #ff9800;
+				animation: pulse 1.5s infinite;
+			}
+			.disconnected .status-dot {
+				background: #f44336;
+				box-shadow: 0 0 10px #f44336;
+			}
+
+			@keyframes pulse {
+				0%,
+				100% {
+					opacity: 1;
+				}
+				50% {
+					opacity: 0.5;
+				}
+			}
+
+			#cooldownTimer {
+				color: #4caf50;
+				font-weight: bold;
+				font-size: 13px;
+				min-width: 40px;
+			}
+
+			.status-label {
+				opacity: 0.8;
+				font-size: 11px;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+			}
+
+			/* Компактная палитра цветов */
+			#colorPalette {
+				position: absolute;
+				top: 50%;
+				right: 10px;
+				transform: translateY(-50%);
+				background: rgba(0, 0, 0, 0.85);
+				border-radius: 12px;
+				backdrop-filter: blur(10px);
+				border: 1px solid rgba(255, 255, 255, 0.15);
+				z-index: 100;
+				overflow: hidden;
+				transition: all 0.3s ease;
+				box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+				max-height: 70vh;
+			}
+
+			.palette-compact {
+				display: flex;
+				flex-direction: column;
+				padding: 10px;
+				gap: 6px;
+			}
+
+			.color-row {
+				display: flex;
+				gap: 6px;
+			}
+
+			.color-swatch {
+				width: 32px;
+				height: 32px;
+				border-radius: 8px;
+				cursor: pointer;
+				border: 2px solid transparent;
+				transition: all 0.2s ease;
+				position: relative;
+			}
+
+			.color-swatch:hover {
+				transform: scale(1.1);
+				box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+			}
+
+			.color-swatch.selected {
+				border-color: white;
+				transform: scale(1.1);
+				box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
+			}
+
+			.color-swatch.selected::after {
+				content: "✓";
+				position: absolute;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%);
+				color: white;
+				font-size: 14px;
+				font-weight: bold;
+				text-shadow: 0 0 3px black;
+			}
+
+			/* Панель навигации */
+			#navPanel {
+				position: absolute;
+				bottom: 20px;
+				left: 50%;
+				transform: translateX(-50%);
+				background: rgba(0, 0, 0, 0.85);
+				padding: 12px 20px;
+				border-radius: 12px;
+				display: flex;
+				gap: 15px;
+				backdrop-filter: blur(10px);
+				border: 1px solid rgba(255, 255, 255, 0.15);
+				z-index: 90;
+				box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+				opacity: 0.7;
+				transition: opacity 0.3s;
+			}
+
+			#navPanel:hover {
+				opacity: 1;
+			}
+
+			.nav-item {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 4px;
+				cursor: pointer;
+				color: white;
+				padding: 8px 12px;
+				border-radius: 8px;
+				transition: background 0.3s;
+				min-width: 60px;
+			}
+
+			.nav-item:hover {
+				background: rgba(255, 255, 255, 0.1);
+			}
+
+			.nav-item i {
+				font-size: 20px;
+				margin-bottom: 2px;
+			}
+
+			.nav-item span {
+				font-size: 10px;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+				opacity: 0.8;
+			}
+
+			/* Панель информации о зуме */
+			#zoomInfo {
+				position: absolute;
+				bottom: 20px;
+				left: 20px;
+				background: rgba(0, 0, 0, 0.85);
+				color: white;
+				padding: 10px 15px;
+				border-radius: 10px;
+				font-size: 12px;
+				backdrop-filter: blur(10px);
+				border: 1px solid rgba(255, 255, 255, 0.15);
+				z-index: 90;
+				box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+				opacity: 0.7;
+				transition: opacity 0.3s;
+			}
+
+			#zoomInfo:hover {
+				opacity: 1;
+			}
+
+			.zoom-value {
+				font-size: 14px;
+				font-weight: bold;
+				color: #4caf50;
+				margin-left: 5px;
+			}
+
+			/* Миникарта */
+			#minimap {
+				position: absolute;
+				top: 70px;
+				right: 20px;
+				width: 150px;
+				height: 150px;
+				background: rgba(0, 0, 0, 0.85);
+				border-radius: 8px;
+				backdrop-filter: blur(10px);
+				border: 2px solid rgba(255, 255, 255, 0.2);
+				z-index: 95;
+				overflow: hidden;
+				opacity: 0.5;
+				transition: opacity 0.3s;
+			}
+
+			#minimap:hover {
+				opacity: 1;
+			}
+
+			#minimapCanvas {
+				width: 100%;
+				height: 100%;
+			}
+
+			.minimap-viewport {
+				position: absolute;
+				border: 2px solid #4caf50;
+				background: rgba(76, 175, 80, 0.1);
+				pointer-events: none;
+			}
+
+			/* Уведомления */
+			.notification {
+				position: absolute;
+				top: 70px;
+				left: 20px;
+				background: rgba(0, 0, 0, 0.9);
+				color: white;
+				padding: 15px 20px;
+				border-radius: 10px;
+				backdrop-filter: blur(10px);
+				border-left: 4px solid #4caf50;
+				z-index: 200;
+				animation:
+					slideInLeft 0.3s,
+					fadeOut 0.3s 2.7s;
+				max-width: 350px;
+				box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+				pointer-events: none;
+			}
+
+			.notification.error {
+				border-left-color: #f44336;
+			}
+
+			.notification.warning {
+				border-left-color: #ff9800;
+			}
+
+			.notification.info {
+				border-left-color: #2196f3;
+			}
+
+			@keyframes slideInLeft {
+				from {
+					transform: translateX(-100%);
+					opacity: 0;
+				}
+				to {
+					transform: translateX(0);
+					opacity: 1;
+				}
+			}
+
+			@keyframes fadeOut {
+				to {
+					opacity: 0;
+				}
+			}
+
+			/* Лоадер */
+			#loader {
+				position: absolute;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%);
+				text-align: center;
+				color: white;
+				z-index: 1000;
+				background: rgba(0, 0, 0, 0.9);
+				padding: 30px 40px;
+				border-radius: 15px;
+				backdrop-filter: blur(10px);
+				border: 1px solid rgba(255, 255, 255, 0.15);
+				min-width: 300px;
+			}
+
+			.spinner {
+				border: 3px solid rgba(255, 255, 255, 0.1);
+				border-top: 3px solid #4caf50;
+				border-radius: 50%;
+				width: 40px;
+				height: 40px;
+				animation: spin 1s linear infinite;
+				margin: 0 auto 15px;
+			}
+
+			.progress-bar {
+				width: 100%;
+				height: 4px;
+				background: rgba(255, 255, 255, 0.1);
+				border-radius: 2px;
+				margin: 15px 0;
+				overflow: hidden;
+			}
+
+			.progress-fill {
+				height: 100%;
+				background: #4caf50;
+				width: 0%;
+				transition: width 0.3s;
+			}
+
+			@keyframes spin {
+				0% {
+					transform: rotate(0deg);
+				}
+				100% {
+					transform: rotate(360deg);
+				}
+			}
+
+			/* Кнопки быстрого доступа */
+			#quickTools {
+				position: absolute;
+				top: 70px;
+				left: 20px;
+				display: flex;
+				flex-direction: column;
+				gap: 10px;
+				z-index: 100;
+			}
+
+			.tool-btn {
+				width: 40px;
+				height: 40px;
+				border-radius: 50%;
+				background: rgba(0, 0, 0, 0.85);
+				border: 1px solid rgba(255, 255, 255, 0.15);
+				color: white;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				cursor: pointer;
+				backdrop-filter: blur(10px);
+				transition: all 0.3s;
+				font-size: 18px;
+				opacity: 0.7;
+			}
+
+			.tool-btn:hover {
+				opacity: 1;
+				transform: scale(1.1);
+				background: rgba(0, 0, 0, 0.95);
+			}
+
+			.tool-btn.active {
+				background: #4caf50;
+				color: white;
+				opacity: 1;
+			}
+
+			/* Индикатор координат */
+			#coordIndicator {
+				position: absolute;
+				bottom: 80px;
+				right: 20px;
+				background: rgba(0, 0, 0, 0.85);
+				color: white;
+				padding: 8px 12px;
+				border-radius: 8px;
+				font-size: 11px;
+				font-family: monospace;
+				backdrop-filter: blur(10px);
+				border: 1px solid rgba(255, 255, 255, 0.15);
+				z-index: 90;
+				opacity: 0.7;
+				transition: opacity 0.3s;
+			}
+
+			#coordIndicator:hover {
+				opacity: 1;
+			}
+
+			/* Скрытые элементы */
+			.hidden {
+				display: none !important;
+			}
+
+			/* Сетка */
+			.grid-overlay {
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				pointer-events: none;
+				opacity: 0.1;
+				background-image: linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+				background-size: 20px 20px;
+			}
+
+			/* Лупа */
+			/* Лупа - прямоугольная версия */
+			#magnifierContainer {
+				position: fixed;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				pointer-events: none;
+				z-index: 150;
+			}
+
+			#magnifier {
+				position: absolute;
+				width: 200px;
+				height: 200px;
+				background: rgba(0, 0, 0, 0.95);
+				border: 3px solid rgba(255, 255, 255, 0.3);
+				box-shadow:
+					0 0 0 1px rgba(0, 0, 0, 0.8),
+					0 0 30px rgba(0, 0, 0, 0.6),
+					0 0 0 2px rgba(255, 255, 255, 0.1) inset,
+					0 0 20px rgba(0, 0, 0, 0.8);
+				overflow: hidden;
+				backdrop-filter: blur(1px);
+				transform: translate(0, 0);
+				display: block;
+				border-radius: 4px;
+			}
+
+			#magnifierCanvas {
+				width: 100%;
+				height: 100%;
+				image-rendering: pixelated;
+				image-rendering: crisp-edges;
+				display: block;
+			}
+
+			#magnifierCrosshair {
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				pointer-events: none;
+			}
+
+			#magnifierInfo {
+				position: absolute;
+				bottom: 0;
+				left: 0;
+				right: 0;
+				background: rgba(0, 0, 0, 0.85);
+				color: white;
+				padding: 6px 8px;
+				font-size: 10px;
+				display: flex;
+				justify-content: space-between;
+				backdrop-filter: blur(5px);
+				border-top: 1px solid rgba(255, 255, 255, 0.2);
+				font-family: monospace;
+			}
+
+			#magnifierZoom {
+				color: #4caf50;
+				font-weight: bold;
+			}
+
+			#magnifierColor {
+				font-weight: bold;
+			}
+
+			/* Добавляем класс для активной кнопки лупы */
+			.tool-btn.magnifier-active {
+				background: #2196f3;
+				color: white;
+				box-shadow: 0 0 15px rgba(33, 150, 243, 0.5);
+				animation: pulse-magnifier 2s infinite;
+			}
+
+			@keyframes pulse-magnifier {
+				0%,
+				100% {
+					box-shadow: 0 0 15px rgba(33, 150, 243, 0.5);
+				}
+				50% {
+					box-shadow: 0 0 20px rgba(33, 150, 243, 0.8);
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<canvas id="mainCanvas"></canvas>
+
+		<!-- Сетка -->
+		<div id="gridOverlay" class="grid-overlay hidden"></div>
+
+		<!-- Статус бар -->
+		<div id="statusBar" class="connected">
+			<div class="status-item">
+				<span class="status-dot"></span>
+				<div>
+					<div class="status-label">Status</div>
+					<div id="statusText">Connected</div>
+				</div>
+			</div>
+			<div class="status-item">
+				<div>
+					<div class="status-label">Cooldown</div>
+					<div id="cooldownTimer">Ready</div>
+				</div>
+			</div>
+			<div class="status-item">
+				<div>
+					<div class="status-label">Online</div>
+					<div id="onlineCount">0</div>
+				</div>
+			</div>
+			<div class="status-item">
+				<div>
+					<div class="status-label">FPS</div>
+					<div id="fpsCounter">60</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Палитра цветов -->
+		<div id="colorPalette">
+			<div class="palette-compact" id="paletteContainer">
+				<!-- Цвета генерируются скриптом -->
+			</div>
+		</div>
+
+		<!-- Панель навигации -->
+		<div id="navPanel">
+			<div class="nav-item" id="navZoomOut" title="Zoom Out">
+				<i>🔍−</i>
+				<span>Zoom Out</span>
+			</div>
+			<div class="nav-item" id="navZoomIn" title="Zoom In">
+				<i>🔍+</i>
+				<span>Zoom In</span>
+			</div>
+			<div class="nav-item" id="navCenter" title="Center View">
+				<i>◎</i>
+				<span>Center</span>
+			</div>
+			<div class="nav-item" id="navGrid" title="Toggle Grid">
+				<i>#</i>
+				<span>Grid</span>
+			</div>
+			<div class="nav-item" id="navMinimap" title="Toggle Minimap">
+				<i>🗺️</i>
+				<span>Map</span>
+			</div>
+		</div>
+
+		<!-- Информация о зуме -->
+		<div id="zoomInfo">Zoom: <span id="zoomValue" class="zoom-value">100%</span></div>
+
+		<!-- Миникарта -->
+		<div id="minimap" class="hidden">
+			<canvas id="minimapCanvas"></canvas>
+			<div id="minimapViewport" class="minimap-viewport"></div>
+		</div>
+
+		<!-- Индикатор координат -->
+		<div id="coordIndicator">X: <span id="coordX">0</span>, Y: <span id="coordY">0</span></div>
+
+		<!-- Быстрые инструменты -->
+		<div id="quickTools">
+			<div class="tool-btn" id="toolHand" title="Pan Tool (H)">✋</div>
+			<div class="tool-btn active" id="toolPencil" title="Pencil Tool (P)">✏️</div>
+			<div class="tool-btn" id="toolPicker" title="Color Picker (C)">🎨</div>
+			<div class="tool-btn" id="toolMagnifier" title="Magnifier Tool (M) - Toggle with M key">🔍</div>
+		</div>
+
+		<!-- Лоадер -->
+		<div id="loader">
+			<div class="spinner"></div>
+			<div id="loaderTitle">Connecting to PixelBattle...</div>
+			<div class="progress-bar">
+				<div class="progress-fill" id="loaderProgress"></div>
+			</div>
+			<div id="loaderStatus" style="font-size: 12px; opacity: 0.8">Loading canvas data...</div>
+		</div>
+
+		<!-- Лупа -->
+		<div id="magnifierContainer" class="hidden">
+			<div id="magnifier">
+				<canvas id="magnifierCanvas"></canvas>
+				<div id="magnifierInfo">
+					<div>Zoom: <span id="magnifierZoom">4x</span></div>
+					<div>Color: <span id="magnifierColor">#000</span></div>
+				</div>
+			</div>
+		</div>
+
+		<script>
+			const PIXEL_SIZE = 1; // Фиксированный размер пикселя
+
+			class PixelBattleWallpaper {
+				constructor() {
+					this.canvasBuffer = null; // Буфер для отрисовки
+					this.bufferCtx = null;
+					this.isRendering = false;
+					this.dirtyRect = null; // Область для перерисовки
+					this.loadedPixels = 0;
+					this.totalPixels = 0;
+
+					this.canvas = document.getElementById("mainCanvas");
+					this.ctx = this.canvas.getContext("2d");
+					this.ws = null;
+
+					// В конструкторе добавляем:
+					this.pendingBinaryData = null;
+					this.expectingBinaryData = false;
+
+					// Буфер для отрисовки
+					this.canvasBuffer = null;
+					this.bufferCtx = null;
+
+					// Конфигурация
+					this.canvasWidth = 800; // Будет обновлено с сервера
+					this.canvasHeight = 800;
+					this.cooldownTime = 1000; // 30 секунд
+
+					// Состояние камеры - исправляем формулы
+					this.camera = {
+						x: 0,
+						y: 0,
+						zoom: 1.0,
+						minZoom: 0.1,
+						maxZoom: 20
+					};
+
+					// Лупа
+					this.magnifier = {
+						enabled: false, // тогл вкл/выкл
+						zoomFactor: 4, // множитель увеличения ОТНОСИТЕЛЬНО текущего зума
+						size: 200, // размер прямоугольной лупы
+						offsetX: 20, // смещение от курсора
+						offsetY: 20,
+						canvas: null,
+						ctx: null,
+						canvasElement: null,
+						showPixelGrid: true,
+						showCrosshair: true
+					};
+
+					// Состояние инструментов
+					this.selectedColor = 0;
+					this.activeTool = "pencil"; // pencil, hand, picker, fill
+					this.isDragging = false;
+					this.dragStart = { x: 0, y: 0 };
+					this.showGrid = false;
+					this.showMinimap = true;
+
+					// Состояние
+					this.pixels = new Map();
+					this.selectedColor = 0;
+					this.activeTool = "pencil";
+					this.isDragging = false;
+					this.dragStart = { x: 0, y: 0 };
+					this.isConnected = false;
+					this.lastClickTime = 0;
+					this.cooldownTime = 1000;
+
+					// Производительность
+					this.lastFrameTime = 0;
+					this.fps = 60;
+					this.frameCount = 0;
+					this.lastFpsUpdate = 0;
+
+					// Настройки сервера
+					this.serverConfig = {
+						host: window.location.hostname || "localhost",
+						port: 8080,
+						secure: false,
+						path: "/ws"
+					};
+
+					// Инициализация
+					this.init();
+				}
+
+				init() {
+					// Инициализация холста
+					this.resizeCanvas();
+					window.addEventListener("resize", () => this.resizeCanvas());
+
+					// Инициализация UI
+					this.initPalette();
+					this.initMinimap();
+					this.initEventListeners();
+					this.initTools();
+
+					// Показать лоадер
+					this.updateLoader("Connecting to server...", 0);
+
+					// Подключиться к серверу
+					this.connectToServer();
+
+					this.initMagnifier();
+
+					// Запуск анимации
+					this.animate();
+				}
+
+				initPalette() {
+					const paletteContainer = document.getElementById("paletteContainer");
+					const colors = this.getColorPalette();
+
+					// Группируем цвета по 8 в ряд
+					for (let i = 0; i < colors.length; i += 8) {
+						const row = document.createElement("div");
+						row.className = "color-row";
+
+						for (let j = 0; j < 8; j++) {
+							const index = i + j;
+							if (index >= colors.length) break;
+
+							const swatch = document.createElement("div");
+							swatch.className = "color-swatch";
+							if (index === this.selectedColor) {
+								swatch.classList.add("selected");
+							}
+							swatch.style.backgroundColor = colors[index];
+							swatch.dataset.index = index;
+
+							swatch.addEventListener("click", e => {
+								this.selectedColor = parseInt(e.target.dataset.index);
+								document.querySelectorAll(".color-swatch").forEach(s => {
+									s.classList.remove("selected");
+								});
+								e.target.classList.add("selected");
+								this.activeTool = "pencil";
+								this.updateTools();
+							});
+
+							row.appendChild(swatch);
+						}
+						paletteContainer.appendChild(row);
+					}
+				}
+
+				initMagnifier() {
+					this.magnifier.canvasElement = document.getElementById("magnifierCanvas");
+					this.magnifier.canvas = document.createElement("canvas");
+					this.magnifier.canvas.width = this.magnifier.size;
+					this.magnifier.canvas.height = this.magnifier.size;
+					this.magnifier.ctx = this.magnifier.canvas.getContext("2d");
+
+					// Устанавливаем режим пиксельной графики
+					this.magnifier.ctx.imageSmoothingEnabled = false;
+
+					// Инициализация event listener для лупы
+					document.getElementById("toolMagnifier").addEventListener("click", () => {
+						this.toggleMagnifier();
+					});
+
+					// Показываем/скрываем лупу при движении мыши
+					this.canvas.addEventListener("mousemove", e => {
+						if (this.magnifier.enabled) {
+							this.updateMagnifierPosition(e);
+						}
+					});
+
+					// Скрываем лупу при выходе за пределы canvas
+					this.canvas.addEventListener("mouseleave", () => {
+						this.hideMagnifier();
+					});
+
+					// Изменение зума лупы колесиком мыши при зажатом Alt
+					this.canvas.addEventListener("wheel", e => {
+						if (e.altKey && this.magnifier.enabled) {
+							e.preventDefault();
+							e.stopPropagation();
+
+							const delta = e.deltaY > 0 ? 0.9 : 1.1;
+							this.magnifier.zoomFactor = Math.max(2, Math.min(10, this.magnifier.zoomFactor * delta));
+
+							// Обновляем отображение
+							const rect = this.canvas.getBoundingClientRect();
+							const x = e.clientX - rect.left;
+							const y = e.clientY - rect.top;
+							this.updateMagnifierPosition({ clientX: e.clientX, clientY: e.clientY });
+
+							this.showNotification(`Magnifier: ${this.magnifier.zoomFactor}x`, "info", 1000);
+						}
+					});
+				}
+
+				// Переключение лупы (тогл)
+				toggleMagnifier() {
+					this.magnifier.enabled = !this.magnifier.enabled;
+
+					const magnifierBtn = document.getElementById("toolMagnifier");
+					if (this.magnifier.enabled) {
+						magnifierBtn.classList.add("magnifier-active");
+						document.getElementById("magnifierContainer").classList.remove("hidden");
+						this.showNotification("Magnifier ON - Shows zoomed area for aiming", "info", 2000);
+					} else {
+						magnifierBtn.classList.remove("magnifier-active");
+						document.getElementById("magnifierContainer").classList.add("hidden");
+						this.showNotification("Magnifier OFF", "info", 1000);
+					}
+
+					// Обновляем отображение если лупа включена
+					if (this.magnifier.enabled) {
+						this.render();
+					}
+				}
+
+				updateMagnifier() {
+					const magnifier = document.getElementById("magnifierContainer");
+					if (this.activeTool === "magnifier") {
+						magnifier.classList.remove("hidden");
+						document.getElementById("magnifier").style.display = "block";
+					} else {
+						magnifier.classList.add("hidden");
+						document.getElementById("magnifier").style.display = "none";
+					}
+				}
+
+				// Обновление позиции лупы
+				updateMagnifierPosition(e) {
+					if (!this.magnifier.enabled || !this.bufferCtx) return;
+
+					const magnifier = document.getElementById("magnifier");
+					const mouseX = e.clientX;
+					const mouseY = e.clientY;
+
+					// Позиционируем лупу с учетом смещения (чтобы не перекрывать курсор)
+					const rect = this.canvas.getBoundingClientRect();
+					const canvasX = mouseX - rect.left;
+					const canvasY = mouseY - rect.top;
+
+					// Проверяем, где разместить лупу, чтобы не выходить за экран
+					let posX = mouseX + this.magnifier.offsetX;
+					let posY = mouseY + this.magnifier.offsetY;
+
+					if (posX + this.magnifier.size > window.innerWidth) {
+						posX = mouseX - this.magnifier.size - this.magnifier.offsetX;
+					}
+					if (posY + this.magnifier.size > window.innerHeight) {
+						posY = mouseY - this.magnifier.size - this.magnifier.offsetY;
+					}
+
+					magnifier.style.left = posX + "px";
+					magnifier.style.top = posY + "px";
+
+					// Отрисовываем лупу
+					this.renderMagnifier(canvasX, canvasY);
+				}
+
+				// Отрисовка лупы
+				renderMagnifier(canvasX, canvasY) {
+					if (!this.bufferCtx || !this.canvasBuffer || !this.magnifier.enabled) return;
+
+					// Мировые координаты курсора
+					const worldX = this.screenToWorldX(canvasX);
+					const worldY = this.screenToWorldY(canvasY);
+
+					// ОБЩИЙ зум = зум камеры * зум лупы
+					const totalZoom = this.camera.zoom * this.magnifier.zoomFactor;
+
+					// Размер области захвата (в мировых координатах)
+					const captureSize = this.magnifier.size / totalZoom;
+					const halfSize = captureSize / 2;
+
+					// Координаты области захвата
+					const captureX = Math.max(0, Math.min(this.canvasWidth - captureSize, worldX - halfSize));
+					const captureY = Math.max(0, Math.min(this.canvasHeight - captureSize, worldY - halfSize));
+
+					// Очищаем canvas лупы
+					this.magnifier.ctx.fillStyle = "#000";
+					this.magnifier.ctx.fillRect(0, 0, this.magnifier.size, this.magnifier.size);
+
+					// Копируем область из буфера в лупу БЕЗ СГЛАЖИВАНИЯ
+					this.magnifier.ctx.save();
+					this.magnifier.ctx.imageSmoothingEnabled = false;
+
+					this.magnifier.ctx.drawImage(this.canvasBuffer, captureX, captureY, captureSize, captureSize, 0, 0, this.magnifier.size, this.magnifier.size);
+
+					this.magnifier.ctx.restore();
+
+					// Рисуем сетку пикселей если включено
+					if (this.magnifier.showPixelGrid) {
+						this.magnifier.ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+						this.magnifier.ctx.lineWidth = 1;
+						const gridSize = totalZoom; // размер сетки в пикселях лупы
+
+						for (let i = 0; i <= this.magnifier.size; i += gridSize) {
+							this.magnifier.ctx.beginPath();
+							this.magnifier.ctx.moveTo(i, 0);
+							this.magnifier.ctx.lineTo(i, this.magnifier.size);
+							this.magnifier.ctx.stroke();
+
+							this.magnifier.ctx.beginPath();
+							this.magnifier.ctx.moveTo(0, i);
+							this.magnifier.ctx.lineTo(this.magnifier.size, i);
+							this.magnifier.ctx.stroke();
+						}
+					}
+
+					// Обновляем canvas лупы с пиксельным рендерингом
+					this.magnifier.canvasElement.width = this.magnifier.size;
+					this.magnifier.canvasElement.height = this.magnifier.size;
+					const displayCtx = this.magnifier.canvasElement.getContext("2d");
+
+					// ВЫКЛЮЧАЕМ сглаживание для четкости
+					displayCtx.imageSmoothingEnabled = false;
+					displayCtx.mozImageSmoothingEnabled = false;
+					displayCtx.webkitImageSmoothingEnabled = false;
+					displayCtx.msImageSmoothingEnabled = false;
+
+					displayCtx.drawImage(this.magnifier.canvas, 0, 0);
+
+					// Рисуем перекрестие если включено
+					if (this.magnifier.showCrosshair) {
+						const centerX = this.magnifier.size / 2;
+						const centerY = this.magnifier.size / 2;
+
+						displayCtx.strokeStyle = "#FF0000";
+						displayCtx.lineWidth = 1;
+
+						// Вертикальная линия
+						displayCtx.beginPath();
+						displayCtx.moveTo(centerX, 0);
+						displayCtx.lineTo(centerX, this.magnifier.size);
+						displayCtx.stroke();
+
+						// Горизонтальная линия
+						displayCtx.beginPath();
+						displayCtx.moveTo(0, centerY);
+						displayCtx.lineTo(this.magnifier.size, centerY);
+						displayCtx.stroke();
+
+						// Центральная рамка вокруг пикселя
+						const pixelSize = totalZoom;
+						displayCtx.strokeStyle = "#00FF00";
+						displayCtx.lineWidth = 2;
+						displayCtx.strokeRect(centerX - pixelSize / 2, centerY - pixelSize / 2, pixelSize, pixelSize);
+					}
+
+					// Получаем цвет центрального пикселя
+					const centerWorldX = Math.floor(worldX);
+					const centerWorldY = Math.floor(worldY);
+					const pixelKey = `${centerWorldX},${centerWorldY}`;
+					const colorIndex = this.pixels.get(pixelKey) || 0;
+					const colors = this.getColorPalette();
+					const colorHex = colors[colorIndex] || "#000000";
+
+					// Обновляем информацию
+					const totalZoomPercent = Math.round(totalZoom * 100);
+					document.getElementById("magnifierZoom").textContent = `${this.magnifier.zoomFactor}x (${totalZoomPercent}%)`;
+					document.getElementById("magnifierColor").textContent = colorHex;
+					document.getElementById("magnifierColor").style.color = colorHex;
+
+					// Отображаем координаты
+					this.updateCoordinates(centerWorldX, centerWorldY);
+				}
+				hideMagnifier() {
+					if (this.magnifier.enabled) {
+						document.getElementById("magnifierContainer").classList.add("hidden");
+					}
+				}
+
+				initMinimap() {
+					this.minimapCanvas = document.getElementById("minimapCanvas");
+					this.minimapCtx = this.minimapCanvas.getContext("2d");
+					this.minimapCanvas.width = 150;
+					this.minimapCanvas.height = 150;
+				}
+
+				initEventListeners() {
+					// Колёсико мыши - зум
+					this.canvas.addEventListener("wheel", e => {
+						e.preventDefault();
+
+						const rect = this.canvas.getBoundingClientRect();
+						const mouseX = e.clientX - rect.left;
+						const mouseY = e.clientY - rect.top;
+
+						// Мировые координаты мыши до зума
+						const worldX = this.screenToWorldX(mouseX);
+						const worldY = this.screenToWorldY(mouseY);
+
+						// Изменение зума
+						const delta = e.deltaY > 0 ? 0.9 : 1.1;
+						const newZoom = Math.max(this.camera.minZoom, Math.min(this.camera.maxZoom, this.camera.zoom * delta));
+
+						// Новые координаты камеры чтобы точка под мышью осталась на месте
+						this.camera.x = worldX - mouseX / newZoom;
+						this.camera.y = worldY - mouseY / newZoom;
+						this.camera.zoom = newZoom;
+
+						this.clampCamera();
+						this.updateZoomInfo();
+						this.render();
+					});
+
+					// Левая кнопка мыши - рисование/перетаскивание
+					this.canvas.addEventListener("mousedown", e => {
+						const rect = this.canvas.getBoundingClientRect();
+						this.dragStart = {
+							x: e.clientX - rect.left,
+							y: e.clientY - rect.top,
+							cameraX: this.camera.x,
+							cameraY: this.camera.y
+						};
+
+						if (e.button === 0) {
+							// Левая кнопка
+							if (this.activeTool === "hand") {
+								this.isDragging = true;
+							} else if (this.activeTool === "pencil") {
+								this.handleCanvasClick(e);
+							} else if (this.activeTool === "picker") {
+								this.handleColorPick(e);
+							}
+						} else if (e.button === 1) {
+							// Средняя кнопка
+							this.isDragging = true;
+							e.preventDefault();
+						}
+					});
+
+					// Движение мыши
+					this.canvas.addEventListener("mousemove", e => {
+						const rect = this.canvas.getBoundingClientRect();
+						const mouseX = e.clientX - rect.left;
+						const mouseY = e.clientY - rect.top;
+
+						// Обновляем координаты
+						const worldX = Math.floor(this.screenToWorldX(mouseX));
+						const worldY = Math.floor(this.screenToWorldY(mouseY));
+						this.updateCoordinates(worldX, worldY);
+
+						// Обновляем лупу
+						this.updateMagnifierPosition(e);
+
+						// Перетаскивание
+						if (this.isDragging) {
+							const dx = (mouseX - this.dragStart.x) / (this.canvas.width / (this.canvasWidth / this.camera.zoom));
+							const dy = (mouseY - this.dragStart.y) / (this.canvas.height / (this.canvasHeight / this.camera.zoom));
+
+							this.camera.x = this.dragStart.cameraX - dx;
+							this.camera.y = this.dragStart.cameraY - dy;
+
+							// Ограничиваем движение границами холста
+							this.clampCamera();
+							this.render();
+						}
+					});
+
+					// Отпускание кнопки мыши
+					document.addEventListener("mouseup", () => {
+						this.isDragging = false;
+					});
+
+					// Клавиши
+					document.addEventListener("keydown", e => {
+						this.handleKeyDown(e);
+					});
+
+					// Навигационные кнопки
+					document.getElementById("navZoomIn").addEventListener("click", () => {
+						this.camera.zoom = Math.min(this.camera.maxZoom, this.camera.zoom * 1.5);
+						this.updateZoomInfo();
+						this.render();
+					});
+
+					document.getElementById("navZoomOut").addEventListener("click", () => {
+						this.camera.zoom = Math.max(this.camera.minZoom, this.camera.zoom / 1.5);
+						this.updateZoomInfo();
+						this.render();
+					});
+
+					document.getElementById("navCenter").addEventListener("click", () => {
+						this.camera.x = this.canvasWidth / 2;
+						this.camera.y = this.canvasHeight / 2;
+						this.camera.zoom = 1.0;
+						this.updateZoomInfo();
+						this.render();
+					});
+
+					document.getElementById("navGrid").addEventListener("click", () => {
+						this.showGrid = !this.showGrid;
+						document.getElementById("gridOverlay").classList.toggle("hidden", !this.showGrid);
+					});
+
+					document.getElementById("navMinimap").addEventListener("click", () => {
+						this.showMinimap = !this.showMinimap;
+						document.getElementById("minimap").classList.toggle("hidden", !this.showMinimap);
+					});
+
+					// Перетаскивание миникарты
+					const minimap = document.getElementById("minimap");
+					minimap.addEventListener("mousedown", e => {
+						const rect = minimap.getBoundingClientRect();
+						const x = ((e.clientX - rect.left) / rect.width) * this.canvasWidth;
+						const y = ((e.clientY - rect.top) / rect.height) * this.canvasHeight;
+
+						this.camera.x = x;
+						this.camera.y = y;
+						this.clampCamera();
+						this.render();
+					});
+				}
+
+				initTools() {
+					document.getElementById("toolPencil").addEventListener("click", () => {
+						this.activeTool = "pencil";
+						this.updateTools();
+					});
+
+					document.getElementById("toolHand").addEventListener("click", () => {
+						this.activeTool = "hand";
+						this.updateTools();
+					});
+
+					document.getElementById("toolPicker").addEventListener("click", () => {
+						this.activeTool = "picker";
+						this.updateTools();
+					});
+				}
+
+				updateTools() {
+					document.querySelectorAll(".tool-btn").forEach(btn => {
+						btn.classList.remove("active");
+						btn.classList.remove("magnifier-active");
+					});
+
+					switch (this.activeTool) {
+						case "pencil":
+							document.getElementById("toolPencil").classList.add("active");
+							break;
+						case "hand":
+							document.getElementById("toolHand").classList.add("active");
+							break;
+						case "picker":
+							document.getElementById("toolPicker").classList.add("active");
+							break;
+						case "fill":
+							document.getElementById("toolFill").classList.add("active");
+							break;
+						case "magnifier":
+							document.getElementById("toolMagnifier").classList.add("magnifier-active");
+							break;
+					}
+				}
+
+				getColorPalette() {
+					return [
+						"#000000",
+						"#1A1A1A",
+						"#333333",
+						"#4D4D4D",
+						"#666666",
+						"#808080",
+						"#999999",
+						"#B3B3B3",
+						"#CCCCCC",
+						"#E6E6E6",
+						"#FFFFFF",
+						"#FF4444",
+						"#FF8844",
+						"#FFCC44",
+						"#FFFF44",
+						"#CCFF44",
+						"#88FF44",
+						"#44FF44",
+						"#44FF88",
+						"#44FFCC",
+						"#44FFFF",
+						"#44CCFF",
+						"#4488FF",
+						"#4444FF",
+						"#8844FF",
+						"#CC44FF",
+						"#FF44FF",
+						"#FF44CC",
+						"#FF4488",
+						"#FF4444",
+						"#FF0000",
+						"#00FF00",
+						"#0000FF",
+						"#FFFF00",
+						"#FF00FF",
+						"#00FFFF",
+						"#FFA500",
+						"#800080",
+						"#008080",
+						"#FFC0CB"
+					];
+				}
+
+				resizeCanvas() {
+					this.canvas.width = window.innerWidth;
+					this.canvas.height = window.innerHeight;
+					this.render();
+				}
+
+				// Преобразование экранных координат в мировые
+				// ИСПРАВЛЕННАЯ: Преобразование экранных координат в мировые
+				screenToWorldX(screenX) {
+					return Math.floor(this.camera.x + screenX / this.camera.zoom);
+				}
+
+				screenToWorldY(screenY) {
+					return Math.floor(this.camera.y + screenY / this.camera.zoom);
+				}
+
+				// Преобразование мировых координат в экранные
+				worldToScreenX(worldX) {
+					return (worldX - this.camera.x) * this.camera.zoom;
+				}
+
+				worldToScreenY(worldY) {
+					return (worldY - this.camera.y) * this.camera.zoom;
+				}
+
+				// Ограничение камеры границами холста
+				clampCamera() {
+					const viewWidth = this.canvas.width / this.camera.zoom;
+					const viewHeight = this.canvas.height / this.camera.zoom;
+
+					// Не даем камере выйти за пределы холста
+					this.camera.x = Math.max(0, Math.min(this.canvasWidth - viewWidth, this.camera.x));
+					this.camera.y = Math.max(0, Math.min(this.canvasHeight - viewHeight, this.camera.y));
+				}
+
+				handleCanvasClick(e) {
+					const now = Date.now();
+					const timeSinceLastClick = now - this.lastClickTime;
+
+					if (timeSinceLastClick < this.cooldownTime) {
+						const secondsLeft = Math.ceil((this.cooldownTime - timeSinceLastClick) / 1000);
+						this.showNotification(`Wait ${secondsLeft}s before placing next pixel`, "warning");
+						return;
+					}
+
+					const rect = this.canvas.getBoundingClientRect();
+					const screenX = e.clientX - rect.left;
+					const screenY = e.clientY - rect.top;
+
+					// ПРЕОБРАЗУЕМ КООРДИНАТЫ ПРАВИЛЬНО
+					const worldX = this.screenToWorldX(screenX);
+					const worldY = this.screenToWorldY(screenY);
+
+					// Проверка границ с учетом реального размера холста
+					if (worldX < 0 || worldX >= this.canvasWidth || worldY < 0 || worldY >= this.canvasHeight) {
+						this.showNotification(`Coordinates out of bounds (0-${this.canvasWidth - 1}, 0-${this.canvasHeight - 1})`, "warning");
+						return;
+					}
+
+					// Отправляем на сервер
+					if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+						this.ws.send(
+							JSON.stringify({
+								type: "placePixel",
+								x: worldX,
+								y: worldY,
+								color: this.selectedColor,
+								timestamp: now
+							})
+						);
+
+						this.lastClickTime = now;
+						this.updateCooldownTimer();
+
+						// Предварительная отрисовка
+						this.setPixel(worldX, worldY, this.selectedColor);
+						this.showNotification(`Placed pixel at (${worldX}, ${worldY})`);
+					}
+				}
+
+				handleColorPick(e) {
+					e.preventDefault();
+
+					const rect = this.canvas.getBoundingClientRect();
+					const screenX = e.clientX - rect.left;
+					const screenY = e.clientY - rect.top;
+
+					const worldX = Math.floor(this.screenToWorldX(screenX));
+					const worldY = Math.floor(this.screenToWorldY(screenY));
+
+					if (worldX >= 0 && worldX < this.canvasWidth && worldY >= 0 && worldY < this.canvasHeight) {
+						const pixelKey = `${worldX},${worldY}`;
+						const colorIndex = this.pixels.get(pixelKey) || 0;
+						const colors = this.getColorPalette();
+
+						this.selectedColor = colorIndex;
+
+						// Обновляем UI
+						document.querySelectorAll(".color-swatch").forEach(s => {
+							s.classList.remove("selected");
+							if (parseInt(s.dataset.index) === colorIndex) {
+								s.classList.add("selected");
+							}
+						});
+
+						this.showNotification(`Picked color #${colorIndex}`, "info");
+					}
+				}
+
+				handleKeyDown(e) {
+					const speed = 100 / this.camera.zoom;
+
+					switch (e.key.toLowerCase()) {
+						case "arrowup":
+							this.camera.y -= speed;
+							this.clampCamera();
+							this.render();
+							e.preventDefault();
+							break;
+
+						case "arrowdown":
+							this.camera.y += speed;
+							this.clampCamera();
+							this.render();
+							e.preventDefault();
+							break;
+
+						case "arrowleft":
+							this.camera.x -= speed;
+							this.clampCamera();
+							this.render();
+							e.preventDefault();
+							break;
+
+						case "arrowright":
+							this.camera.x += speed;
+							this.clampCamera();
+							this.render();
+							e.preventDefault();
+							break;
+
+						case "+":
+						case "=":
+							this.camera.zoom = Math.min(this.camera.maxZoom, this.camera.zoom * 1.2);
+							this.updateZoomInfo();
+							this.render();
+							e.preventDefault();
+							break;
+
+						case "-":
+							this.camera.zoom = Math.max(this.camera.minZoom, this.camera.zoom / 1.2);
+							this.updateZoomInfo();
+							this.render();
+							e.preventDefault();
+							break;
+
+						case "0":
+							this.camera.x = this.canvasWidth / 2;
+							this.camera.y = this.canvasHeight / 2;
+							this.camera.zoom = 1.0;
+							this.updateZoomInfo();
+							this.render();
+							break;
+
+						case "h":
+							this.activeTool = "hand";
+							this.updateTools();
+							break;
+
+						case "p":
+							this.activeTool = "pencil";
+							this.updateTools();
+							break;
+
+						case "c":
+							this.activeTool = "picker";
+							this.updateTools();
+							break;
+
+						case "f":
+							this.activeTool = "fill";
+							this.updateTools();
+							break;
+
+						case "g":
+							this.showGrid = !this.showGrid;
+							document.getElementById("gridOverlay").classList.toggle("hidden", !this.showGrid);
+							break;
+
+						case "m":
+							this.showMinimap = !this.showMinimap;
+							document.getElementById("minimap").classList.toggle("hidden", !this.showMinimap);
+							break;
+
+						case "m":
+							this.toggleMagnifier();
+							e.preventDefault();
+							break;
+
+						case "[":
+							if (this.magnifier.enabled) {
+								this.magnifier.zoomFactor = Math.max(2, this.magnifier.zoomFactor - 1);
+								const rect = this.canvas.getBoundingClientRect();
+								this.updateMagnifierPosition({
+									clientX: rect.left + this.canvas.width / 2,
+									clientY: rect.top + this.canvas.height / 2
+								});
+								this.showNotification(`Magnifier: ${this.magnifier.zoomFactor}x`, "info", 1000);
+								e.preventDefault();
+							}
+							break;
+
+						case "]":
+							if (this.magnifier.enabled) {
+								this.magnifier.zoomFactor = Math.min(10, this.magnifier.zoomFactor + 1);
+								const rect = this.canvas.getBoundingClientRect();
+								this.updateMagnifierPosition({
+									clientX: rect.left + this.canvas.width / 2,
+									clientY: rect.top + this.canvas.height / 2
+								});
+								this.showNotification(`Magnifier: ${this.magnifier.zoomFactor}x`, "info", 1000);
+								e.preventDefault();
+							}
+							break;
+
+						case "escape":
+							// Ничего не делаем, чтобы не закрыть Wallpaper Engine
+							break;
+					}
+				}
+
+				setPixel(x, y, color) {
+					const key = `${x},${y}`;
+					this.pixels.set(key, color);
+
+					// Рисуем в буфере
+					if (this.bufferCtx) {
+						const colors = this.getColorPalette();
+						this.bufferCtx.fillStyle = colors[color] || colors[0];
+						this.bufferCtx.fillRect(x, y, 1, 1);
+					}
+
+					// Перерисовываем
+					this.render();
+				}
+
+				drawPixel(x, y, colorIndex) {
+					const colors = this.getColorPalette();
+					const color = colors[colorIndex] || colors[0];
+
+					// Преобразуем мировые координаты в экранные
+					const screenX = this.worldToScreenX(x);
+					const screenY = this.worldToScreenY(y);
+					const pixelSize = Math.max(1, this.camera.zoom);
+
+					this.ctx.fillStyle = color;
+					this.ctx.fillRect(screenX, screenY, pixelSize, pixelSize);
+				}
+
+				initCanvasBuffer() {
+					this.canvasBuffer = document.createElement("canvas");
+					this.canvasBuffer.width = this.canvasWidth;
+					this.canvasBuffer.height = this.canvasHeight;
+					this.bufferCtx = this.canvasBuffer.getContext("2d");
+
+					// Заливаем черным
+					this.bufferCtx.fillStyle = "#000";
+					this.bufferCtx.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
+
+					// Устанавливаем режим пиксельной графики
+					this.bufferCtx.imageSmoothingEnabled = false;
+					this.ctx.imageSmoothingEnabled = false;
+				}
+
+				// Оптимизируем функцию render:
+				render() {
+					if (!this.bufferCtx || !this.canvasBuffer) {
+						// Отрисовка фона если буфер еще не готов
+						this.ctx.fillStyle = "#0a0a0a";
+						this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+						return;
+					}
+
+					// Очищаем экран
+					this.ctx.fillStyle = "#0a0a0a";
+					this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+					// Вычисляем видимую область в мировых координатах
+					const visibleMinX = Math.max(0, Math.floor(this.camera.x));
+					const visibleMaxX = Math.min(this.canvasWidth, Math.ceil(this.camera.x + this.canvas.width / this.camera.zoom));
+					const visibleMinY = Math.max(0, Math.floor(this.camera.y));
+					const visibleMaxY = Math.min(this.canvasHeight, Math.ceil(this.camera.y + this.canvas.height / this.camera.zoom));
+
+					const bufferWidth = visibleMaxX - visibleMinX;
+					const bufferHeight = visibleMaxY - visibleMinY;
+
+					if (bufferWidth <= 0 || bufferHeight <= 0) return;
+
+					// Временный canvas для масштабирования
+					const tempCanvas = document.createElement("canvas");
+					tempCanvas.width = bufferWidth;
+					tempCanvas.height = bufferHeight;
+					const tempCtx = tempCanvas.getContext("2d");
+
+					// ВЫКЛЮЧАЕМ сглаживание для пиксельной графики
+					tempCtx.imageSmoothingEnabled = false;
+					tempCtx.mozImageSmoothingEnabled = false;
+					tempCtx.webkitImageSmoothingEnabled = false;
+					tempCtx.msImageSmoothingEnabled = false;
+
+					// Копируем область из буфера
+					tempCtx.drawImage(this.canvasBuffer, visibleMinX, visibleMinY, bufferWidth, bufferHeight, 0, 0, bufferWidth, bufferHeight);
+
+					// Координаты на экране
+					const screenX = (visibleMinX - this.camera.x) * this.camera.zoom;
+					const screenY = (visibleMinY - this.camera.y) * this.camera.zoom;
+					const screenWidth = bufferWidth * this.camera.zoom;
+					const screenHeight = bufferHeight * this.camera.zoom;
+
+					// Отключаем сглаживание на основном canvas
+					this.ctx.imageSmoothingEnabled = false;
+					this.ctx.mozImageSmoothingEnabled = false;
+					this.ctx.webkitImageSmoothingEnabled = false;
+					this.ctx.msImageSmoothingEnabled = false;
+
+					// Рисуем масштабированную область
+					this.ctx.drawImage(tempCanvas, 0, 0, bufferWidth, bufferHeight, screenX, screenY, screenWidth, screenHeight);
+
+					// Обновляем миникарту
+					this.updateMinimap();
+				}
+
+				updateMinimap() {
+					if (!this.showMinimap || !this.minimapCtx || !this.bufferCtx) return;
+
+					// Очищаем миникарту
+					this.minimapCtx.fillStyle = "#1a1a1a";
+					this.minimapCtx.fillRect(0, 0, 150, 150);
+
+					// Масштаб для миникарты
+					const scaleX = 150 / this.canvasWidth;
+					const scaleY = 150 / this.canvasHeight;
+					const scale = Math.min(scaleX, scaleY);
+
+					// Рисуем уменьшенную версию буфера
+					this.minimapCtx.drawImage(this.canvasBuffer, 0, 0, this.canvasWidth, this.canvasHeight, 0, 0, this.canvasWidth * scale, this.canvasHeight * scale);
+
+					// Рисуем область просмотра
+					const viewX = this.camera.x * scale;
+					const viewY = this.camera.y * scale;
+					const viewWidth = (this.canvas.width / this.camera.zoom) * scale;
+					const viewHeight = (this.canvas.height / this.camera.zoom) * scale;
+
+					const viewport = document.getElementById("minimapViewport");
+					viewport.style.left = `${viewX}px`;
+					viewport.style.top = `${viewY}px`;
+					viewport.style.width = `${viewWidth}px`;
+					viewport.style.height = `${viewHeight}px`;
+				}
+
+				updateCoordinates(x, y) {
+					document.getElementById("coordX").textContent = x;
+					document.getElementById("coordY").textContent = y;
+				}
+
+				updateZoomInfo() {
+					const zoomPercent = Math.round(this.camera.zoom * 100);
+					document.getElementById("zoomValue").textContent = `${zoomPercent}%`;
+				}
+
+				updateCooldownTimer() {
+					const timerElement = document.getElementById("cooldownTimer");
+					const updateTimer = () => {
+						const now = Date.now();
+						const timeLeft = Math.max(0, this.cooldownTime - (now - this.lastClickTime));
+
+						if (timeLeft <= 0) {
+							timerElement.textContent = "Ready";
+							timerElement.style.color = "#4CAF50";
+						} else {
+							const seconds = Math.ceil(timeLeft / 1000);
+							timerElement.textContent = `${seconds}s`;
+							timerElement.style.color = seconds <= 5 ? "#4CAF50" : "#FF9800";
+						}
+					};
+
+					updateTimer();
+					if (this.cooldownInterval) clearInterval(this.cooldownInterval);
+					this.cooldownInterval = setInterval(updateTimer, 1000);
+				}
+
+				updateFPS() {
+					const now = performance.now();
+					this.frameCount++;
+
+					if (now - this.lastFpsUpdate >= 1000) {
+						this.fps = Math.round((this.frameCount * 1000) / (now - this.lastFpsUpdate));
+						this.frameCount = 0;
+						this.lastFpsUpdate = now;
+
+						document.getElementById("fpsCounter").textContent = this.fps;
+					}
+				}
+
+				updateLoader(title, progress) {
+					document.getElementById("loaderTitle").textContent = title;
+					document.getElementById("loaderProgress").style.width = `${progress}%`;
+				}
+
+				connectToServer() {
+					const wsUrl = `ws://${this.serverConfig.host}:${this.serverConfig.port}${this.serverConfig.path}`;
+					this.updateStatus("connecting", "Connecting...");
+
+					try {
+						this.ws = new WebSocket(wsUrl);
+
+						// Разрешаем бинарные данные
+						this.ws.binaryType = "arraybuffer";
+
+						this.ws.onopen = () => {
+							this.isConnected = true;
+							this.updateStatus("connected", "Connected");
+							this.updateLoader("Requesting canvas...", 10);
+							this.ws.send(JSON.stringify({ type: "getCanvas" }));
+						};
+
+						// Обновляем ws.onmessage:
+						this.ws.onmessage = event => {
+							console.log("📥 Received message:", event.data instanceof ArrayBuffer ? "Binary" : "Text", event.data instanceof ArrayBuffer ? event.data.byteLength : event.data.length);
+
+							// Если это бинарные данные
+							if (event.data instanceof ArrayBuffer) {
+								if (this.expectingBinaryData) {
+									this.processBinaryChunk(event.data);
+									this.expectingBinaryData = false;
+								} else {
+									console.warn("⚠️ Unexpected binary data received");
+									// Пытаемся обработать как чанк
+									this.processBinaryChunk(event.data);
+								}
+							}
+							// Если это текстовые данные (JSON)
+							else {
+								try {
+									const data = JSON.parse(event.data);
+									console.log("📥 Parsed JSON:", data.type, data);
+									this.handleServerMessage(data);
+								} catch (error) {
+									console.error("❌ Error parsing message:", error, "Data:", event.data);
+								}
+							}
+						};
+
+						this.ws.onclose = () => {
+							this.isConnected = false;
+							this.updateStatus("disconnected", "Disconnected");
+							this.showNotification("Disconnected from server", "error");
+						};
+
+						this.ws.onerror = error => {
+							console.error("WebSocket error:", error);
+							this.updateStatus("disconnected", "Connection error");
+							this.updateLoader("Connection failed. Running in offline mode.", 100);
+							setTimeout(() => {
+								document.getElementById("loader").classList.add("hidden");
+							}, 2000);
+						};
+					} catch (error) {
+						console.error("Failed to create WebSocket:", error);
+						this.updateStatus("disconnected", "Connection failed");
+					}
+				}
+
+				handleServerMessage(data) {
+					switch (data.type) {
+						case "welcome":
+							// Получаем реальные размеры от сервера
+							this.canvasWidth = data.canvas.width || 800;
+							this.canvasHeight = data.canvas.height || 800;
+							this.cooldownTime = data.cooldown || 1000;
+							this.usersOnline = data.online || 0;
+
+							// Инициализируем буфер с правильными размерами
+							this.initCanvasBuffer();
+
+							// Центрируем камеру
+							this.camera.x = this.canvasWidth / 2 - this.canvas.width / this.camera.zoom / 2;
+							this.camera.y = this.canvasHeight / 2 - this.canvas.height / this.camera.zoom / 2;
+							this.clampCamera();
+
+							// Запрашиваем холст
+							this.ws.send(JSON.stringify({ type: "getCanvas" }));
+							break;
+						case "canvasInfo":
+							this.canvasWidth = data.width || 800;
+							this.canvasHeight = data.height || 800;
+							this.totalChunks = data.totalChunks || 1;
+							this.loadedChunks = new Set();
+
+							// Создаем буфер с правильным размером
+							this.initCanvasBuffer();
+							break;
+						case "chunkMeta":
+							this.handleChunkMeta(data);
+							break;
+						case "canvasComplete":
+							this.handleCanvasComplete();
+							break;
+						case "pixelUpdate":
+							this.handlePixelUpdate(data);
+							break;
+						case "onlineCount":
+							this.usersOnline = data.count;
+							document.getElementById("onlineCount").textContent = data.count;
+							break;
+						case "welcome":
+							this.canvasWidth = data.canvas.width || 8192;
+							this.canvasHeight = data.canvas.height || 8192;
+							this.cooldownTime = data.cooldown || 1000;
+							this.usersOnline = data.online || 0;
+							document.getElementById("onlineCount").textContent = this.usersOnline;
+							break;
+						case "canvasChunk":
+							this.loadCanvasChunk(data);
+							break;
+						case "pixelPlaced":
+							this.lastClickTime = data.timestamp;
+							this.updateCooldownTimer();
+							break;
+
+						case "cooldown":
+							const seconds = Math.ceil(data.timeLeft / 1000);
+							this.showNotification(`Cooldown: ${seconds}s remaining`, "warning");
+							break;
+
+						case "error":
+							this.showNotification(data.message, "error");
+							break;
+					}
+				}
+
+				// Новые функции для обработки:
+				handleCanvasInfo(info) {
+					console.log("🎨 Canvas info received:", info);
+
+					this.canvasWidth = info.width;
+					this.canvasHeight = info.height;
+					this.totalChunks = info.totalChunks;
+					this.chunkSize = info.chunkSize;
+					this.totalPixels = info.totalPixels || info.width * info.height;
+
+					console.log(`🎨 Canvas: ${this.canvasWidth}x${this.canvasHeight}, ${this.totalPixels} pixels, ${this.totalChunks} chunks`);
+
+					this.updateLoader(`Canvas: ${info.width}x${info.height}`, 5);
+
+					// Инициализируем структуры данных
+					if (!this.canvasBuffer) {
+						this.canvasBuffer = document.createElement("canvas");
+						this.canvasBuffer.width = this.canvasWidth;
+						this.canvasBuffer.height = this.canvasHeight;
+						this.bufferCtx = this.canvasBuffer.getContext("2d");
+
+						// Заливаем черным
+						this.bufferCtx.fillStyle = "#000";
+						this.bufferCtx.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
+					}
+				}
+
+				handleChunkMeta(meta) {
+					console.log("📦 Chunk metadata:", meta);
+
+					this.lastChunkStart = meta.start;
+					this.currentChunkIndex = meta.chunkIndex;
+					this.currentChunkSize = meta.size || meta.end - meta.start;
+
+					// Теперь ждем бинарные данные для этого чанка
+					this.expectingBinaryData = true;
+
+					// Обновляем прогресс
+					const progress = Math.min(100, Math.round(((meta.chunkIndex + 1) / this.totalChunks) * 95));
+
+					this.updateLoader(`Loading chunk ${meta.chunkIndex + 1}/${this.totalChunks} (${progress}%)`, progress);
+				}
+
+				loadCanvasChunk(data) {
+					// Для бинарных данных
+					if (data instanceof ArrayBuffer) {
+						this.processBinaryChunk(data);
+					} else if (typeof data === "string") {
+						// JSON сообщение
+						try {
+							const message = JSON.parse(data);
+							this.handleChunkMetadata(message);
+						} catch (e) {
+							console.error("Error parsing message:", e);
+						}
+					}
+				}
+
+				// Упрощенная processBinaryChunk:
+				processBinaryChunk(binaryData) {
+					if (!this.bufferCtx) return;
+
+					const uint8Array = new Uint8Array(binaryData);
+					const colors = this.getColorPalette();
+
+					for (let i = 0; i < uint8Array.length; i++) {
+						const globalIndex = this.lastChunkStart + i;
+						const x = globalIndex % this.canvasWidth;
+						const y = Math.floor(globalIndex / this.canvasWidth);
+						const color = uint8Array[i];
+
+						if (color !== 0) {
+							this.pixels.set(`${x},${y}`, color);
+							this.bufferCtx.fillStyle = colors[color] || colors[0];
+							this.bufferCtx.fillRect(x, y, 1, 1);
+						}
+					}
+
+					this.loadedChunkCount++;
+
+					// Обновляем прогресс
+					if (this.totalChunks > 0) {
+						const progress = Math.min(95, Math.round((this.loadedChunkCount / this.totalChunks) * 95));
+						this.updateLoader(`Loading... ${progress}%`, progress);
+					}
+
+					// Рендерим каждые 5 чанков
+					if (this.loadedChunkCount % 5 === 0) {
+						this.render();
+					}
+				}
+
+				handleChunkMetadata(meta) {
+					switch (meta.type) {
+						case "canvasInfo":
+							this.canvasWidth = meta.width;
+							this.canvasHeight = meta.height;
+							this.totalChunks = meta.totalChunks;
+							this.chunkSize = meta.chunkSize;
+							this.totalPixels = meta.width * meta.height;
+							this.updateLoader("Starting canvas load...", 5);
+
+							console.log("Received chunk size:", meta);
+							break;
+
+						case "chunkMeta":
+							this.lastChunkStart = meta.start;
+							break;
+
+						case "canvasComplete":
+							this.handleCanvasComplete();
+							break;
+					}
+				}
+
+				// Новая функция для планирования перерисовки
+				scheduleRender() {
+					if (!this.isRendering) {
+						this.isRendering = true;
+						requestAnimationFrame(() => {
+							this.render();
+							this.isRendering = false;
+						});
+					}
+				}
+
+				handleCanvasComplete() {
+					console.log("✅ Canvas loading complete!");
+
+					// Финальный рендер
+					this.render();
+
+					// Скрываем лоадер
+					this.updateLoader("Canvas loaded!", 100);
+					setTimeout(() => {
+						document.getElementById("loader").classList.add("hidden");
+						this.showNotification(`Canvas loaded: ${this.canvasWidth}x${this.canvasHeight}`, "info");
+					}, 500);
+
+					// Центрируем камеру
+					this.camera.x = this.canvasWidth / 2 - this.canvas.width / this.camera.zoom / 2;
+					this.camera.y = this.canvasHeight / 2 - this.canvas.height / this.camera.zoom / 2;
+					this.clampCamera();
+					this.updateZoomInfo();
+					this.render();
+				}
+
+				handlePixelUpdate(data) {
+					const { x, y, color } = data;
+					this.setPixel(x, y, color);
+					this.render();
+				}
+
+				updateStatus(status, text) {
+					const statusBar = document.getElementById("statusBar");
+					const statusText = document.getElementById("statusText");
+					statusBar.className = status;
+					statusText.textContent = text;
+				}
+
+				showNotification(message, type = "info") {
+					const oldNotifications = document.querySelectorAll(".notification");
+					oldNotifications.forEach(n => n.remove());
+
+					const notification = document.createElement("div");
+					notification.className = `notification ${type}`;
+					notification.textContent = message;
+					document.body.appendChild(notification);
+
+					setTimeout(() => notification.remove(), 3000);
+				}
+
+				animate() {
+					requestAnimationFrame(() => this.animate());
+				}
+			}
+
+			// Инициализация
+			window.addEventListener("load", () => {
+				window.pixelWall = new PixelBattleWallpaper();
+			});
+		</script>
+	</body>
 </html>
