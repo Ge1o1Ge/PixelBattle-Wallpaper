@@ -734,6 +734,15 @@ wss.on("connection", (ws, req) => {
 					);
 					break;
 
+					case "getOnline" :
+					ws.send(
+						JSON.stringify({
+							type: "onlineCount",
+							count: onlineUsers.size
+						})
+					);
+					break;
+
 				case "requestChunk":
 					const { chunkIndex } = data;
 					const start = chunkIndex * CHUNK_SIZE;

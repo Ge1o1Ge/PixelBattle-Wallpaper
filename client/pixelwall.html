@@ -980,7 +980,9 @@
 					this.showMinimap = true;
 
 					// Состояние
-					this.pixels = new Map();
+					// Используем Uint8Array вместо Map для производительности (1 байт на пиксель)
+					this.pixels = null; // Инициализируется в initCanvasBuffer
+					this.imageData = null; // ImageData для пакетного обновления
 					this.selectedColor = 0;
 					this.activeTool = "pencil";
 					this.isDragging = false;
@@ -994,6 +996,7 @@
 					this.fps = 60;
 					this.frameCount = 0;
 					this.lastFpsUpdate = 0;
+					this.loadedChunkCount = 0; // Счетчик загруженных чанков
 
 					// Автореконнект
 					this.reconnectAttempts = 0;
@@ -1092,21 +1095,32 @@
 					// Устанавливаем режим пиксельной графики
 					this.magnifier.ctx.imageSmoothingEnabled = false;
 
-					// Инициализация event listener для лупы
-					document.getElementById("toolMagnifier").addEventListener("click", () => {
-						this.toggleMagnifier();
-					});
+					// Важно: клик по кнопке лупы обрабатывается в initTools()
+					// (иначе будет двойной toggle и лупа "не включается")
 
-					// Показываем/скрываем лупу при движении мыши
-					this.canvas.addEventListener("mousemove", e => {
-						if (this.magnifier.enabled) {
+					// Глобальный обработчик движения мыши для лупы (чтобы она работала даже при уходе курсора за пределы canvas)
+					document.addEventListener("mousemove", e => {
+						if (!this.magnifier.enabled) return;
+
+						// Проверяем находится ли курсор над canvas
+						const rect = this.canvas.getBoundingClientRect();
+						const mouseX = e.clientX;
+						const mouseY = e.clientY;
+						
+						const isOverCanvas = mouseX >= rect.left && mouseX <= rect.right && 
+						                      mouseY >= rect.top && mouseY <= rect.bottom;
+						
+						// Проверяем не находится ли курсор над UI панелями
+						const isOverUI = e.target.closest(".ui-panel") !== null;
+						
+						if (isOverCanvas && !isOverUI) {
+							// Показываем лупу и обновляем позицию
+							document.getElementById("magnifierContainer").classList.remove("hidden");
 							this.updateMagnifierPosition(e);
+						} else {
+							// Скрываем лупу если курсор не над canvas или над UI
+							document.getElementById("magnifierContainer").classList.add("hidden");
 						}
-					});
-
-					// Скрываем лупу при выходе за пределы canvas
-					this.canvas.addEventListener("mouseleave", () => {
-						this.hideMagnifier();
 					});
 
 					// Изменение зума лупы колесиком мыши при зажатом Alt
@@ -1129,7 +1143,7 @@
 					});
 				}
 
-				// Переключение лупы (тогл)
+				// Переключение лупы (тогл) - независимый инструмент, не меняет activeTool
 				toggleMagnifier() {
 					this.magnifier.enabled = !this.magnifier.enabled;
 
@@ -1146,7 +1160,7 @@
 
 					// Обновляем отображение если лупа включена
 					if (this.magnifier.enabled) {
-						this.render();
+						this.scheduleRender();
 					}
 				}
 
@@ -1200,6 +1214,10 @@
 					const worldX = this.screenToWorldX(canvasX);
 					const worldY = this.screenToWorldY(canvasY);
 
+					// Центрируем на центр пикселя (добавляем 0.5)
+					const centerWorldX = Math.floor(worldX) + 0.5;
+					const centerWorldY = Math.floor(worldY) + 0.5;
+
 					// ОБЩИЙ зум = зум камеры * зум лупы
 					const totalZoom = this.camera.zoom * this.magnifier.zoomFactor;
 
@@ -1207,9 +1225,9 @@
 					const captureSize = this.magnifier.size / totalZoom;
 					const halfSize = captureSize / 2;
 
-					// Координаты области захвата
-					const captureX = Math.max(0, Math.min(this.canvasWidth - captureSize, worldX - halfSize));
-					const captureY = Math.max(0, Math.min(this.canvasHeight - captureSize, worldY - halfSize));
+					// Координаты области захвата (центрируем на центр пикселя)
+					const captureX = Math.max(0, Math.min(this.canvasWidth - captureSize, centerWorldX - halfSize));
+					const captureY = Math.max(0, Math.min(this.canvasHeight - captureSize, centerWorldY - halfSize));
 
 					// Очищаем canvas лупы
 					this.magnifier.ctx.fillStyle = "#000";
@@ -1229,15 +1247,22 @@
 						this.magnifier.ctx.lineWidth = 1;
 						const gridSize = totalZoom; // размер сетки в пикселях лупы
 
-						for (let i = 0; i <= this.magnifier.size; i += gridSize) {
-							this.magnifier.ctx.beginPath();
-							this.magnifier.ctx.moveTo(i, 0);
-							this.magnifier.ctx.lineTo(i, this.magnifier.size);
-							this.magnifier.ctx.stroke();
+						// Сдвиг сетки под субпиксельный captureX/captureY (после центрирования на .5)
+						// Линии должны совпадать с ГРАНИЦАМИ пикселей (world coord = integer)
+						const gridOffsetX = (Math.ceil(captureX) - captureX) * gridSize;
+						const gridOffsetY = (Math.ceil(captureY) - captureY) * gridSize;
 
+						for (let x = gridOffsetX; x <= this.magnifier.size; x += gridSize) {
 							this.magnifier.ctx.beginPath();
-							this.magnifier.ctx.moveTo(0, i);
-							this.magnifier.ctx.lineTo(this.magnifier.size, i);
+							this.magnifier.ctx.moveTo(x, 0);
+							this.magnifier.ctx.lineTo(x, this.magnifier.size);
+							this.magnifier.ctx.stroke();
+						}
+
+						for (let y = gridOffsetY; y <= this.magnifier.size; y += gridSize) {
+							this.magnifier.ctx.beginPath();
+							this.magnifier.ctx.moveTo(0, y);
+							this.magnifier.ctx.lineTo(this.magnifier.size, y);
 							this.magnifier.ctx.stroke();
 						}
 					}
@@ -1282,11 +1307,12 @@
 						displayCtx.strokeRect(centerX - pixelSize / 2, centerY - pixelSize / 2, pixelSize, pixelSize);
 					}
 
-					// Получаем цвет центрального пикселя
-					const centerWorldX = Math.floor(worldX);
-					const centerWorldY = Math.floor(worldY);
-					const pixelKey = `${centerWorldX},${centerWorldY}`;
-					const colorIndex = this.pixels.get(pixelKey) || 0;
+					// Получаем цвет центрального пикселя (используем округленные координаты)
+					const pixelX = Math.floor(worldX);
+					const pixelY = Math.floor(worldY);
+					const colorIndex = (this.pixels && pixelX >= 0 && pixelX < this.canvasWidth && pixelY >= 0 && pixelY < this.canvasHeight)
+						? this.pixels[pixelY * this.canvasWidth + pixelX] || 0
+						: 0;
 					const colors = this.getColorPalette();
 					const colorHex = colors[colorIndex] || "#000000";
 
@@ -1296,8 +1322,8 @@
 					document.getElementById("magnifierColor").textContent = colorHex;
 					document.getElementById("magnifierColor").style.color = colorHex;
 
-					// Отображаем координаты
-					this.updateCoordinates(centerWorldX, centerWorldY);
+					// Отображаем координаты (целочисленные координаты пикселя)
+					this.updateCoordinates(pixelX, pixelY);
 				}
 				hideMagnifier() {
 					if (this.magnifier.enabled) {
@@ -1376,8 +1402,7 @@
 						const worldY = Math.floor(this.screenToWorldY(mouseY));
 						this.updateCoordinates(worldX, worldY);
 
-						// Обновляем лупу
-						this.updateMagnifierPosition(e);
+						// Лупа обновляется через глобальный обработчик document.addEventListener("mousemove")
 
 						// Перетаскивание
 						if (this.isDragging) {
@@ -1496,14 +1521,20 @@
 						const toolBtn = e.target.closest(".tool-btn");
 						if (!toolBtn) return;
 
+						const toolId = toolBtn.id;
+						
+						// Лупа - это тогл инструмент, не меняет activeTool
+						if (toolId === "toolMagnifier") {
+							this.toggleMagnifier();
+							return;
+						}
+
 						const toolMap = {
 							toolPencil: "pencil",
 							toolHand: "hand",
-							toolPicker: "picker",
-							toolMagnifier: "magnifier"
+							toolPicker: "picker"
 						};
 
-						const toolId = toolBtn.id;
 						if (toolMap[toolId]) {
 							this.activeTool = toolMap[toolId];
 							this.updateTools();
@@ -1512,10 +1543,11 @@
 				}
 
 				updateTools() {
-					// Убираем активные классы со всех кнопок
+					// Убираем активные классы со всех кнопок (кроме лупы - она независима)
 					document.querySelectorAll("#toolsPanel .tool-btn").forEach(btn => {
-						btn.classList.remove("active");
-						btn.classList.remove("magnifier-active");
+						if (btn.id !== "toolMagnifier") {
+							btn.classList.remove("active");
+						}
 					});
 
 					// Добавляем активный класс текущему инструменту
@@ -1530,15 +1562,14 @@
 						case "picker":
 							activeBtn = document.getElementById("toolPicker");
 							break;
-						case "magnifier":
-							activeBtn = document.getElementById("toolMagnifier");
-							activeBtn.classList.add("magnifier-active");
-							break;
 					}
 
 					if (activeBtn) {
 						activeBtn.classList.add("active");
 					}
+
+					// Лупа управляется отдельно через toggleMagnifier()
+					// Не меняем её состояние здесь
 				}
 
 				getColorPalette() {
@@ -1677,8 +1708,9 @@
 					const worldY = Math.floor(this.screenToWorldY(screenY));
 
 					if (worldX >= 0 && worldX < this.canvasWidth && worldY >= 0 && worldY < this.canvasHeight) {
-						const pixelKey = `${worldX},${worldY}`;
-						const colorIndex = this.pixels.get(pixelKey) || 0;
+						const colorIndex = (this.pixels)
+							? this.pixels[worldY * this.canvasWidth + worldX] || 0
+							: 0;
 						const colors = this.getColorPalette();
 
 						this.selectedColor = colorIndex;
@@ -1776,11 +1808,7 @@
 							break;
 
 						case "m":
-							this.showMinimap = !this.showMinimap;
-							document.getElementById("minimap").classList.toggle("hidden", !this.showMinimap);
-							break;
-
-						case "m":
+							// M - переключение лупы (тогл инструмент)
 							this.toggleMagnifier();
 							e.preventDefault();
 							break;
@@ -1818,18 +1846,20 @@
 				}
 
 				setPixel(x, y, color) {
-					const key = `${x},${y}`;
-					this.pixels.set(key, color);
+					if (!this.pixels || x < 0 || x >= this.canvasWidth || y < 0 || y >= this.canvasHeight) return;
 
-					// Рисуем в буфере
-					if (this.bufferCtx) {
-						const colors = this.getColorPalette();
-						this.bufferCtx.fillStyle = colors[color] || colors[0];
-						this.bufferCtx.fillRect(x, y, 1, 1);
+					const index = y * this.canvasWidth + x;
+					this.pixels[index] = color;
+
+					// Обновляем ImageData
+					if (this.imageData && this.bufferCtx) {
+						this.updatePixelInImageData(x, y, color);
+						// Применяем изменения к буферу (только этот пиксель)
+						this.bufferCtx.putImageData(this.imageData, 0, 0, x, y, 1, 1);
 					}
 
 					// Перерисовываем
-					this.render();
+					this.scheduleRender();
 				}
 
 				drawPixel(x, y, colorIndex) {
@@ -1851,13 +1881,50 @@
 					this.canvasBuffer.height = this.canvasHeight;
 					this.bufferCtx = this.canvasBuffer.getContext("2d");
 
-					// Заливаем черным
-					this.bufferCtx.fillStyle = "#000";
-					this.bufferCtx.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
+					// Инициализируем Uint8Array для хранения цветов пикселей (1 байт на пиксель)
+					const totalPixels = this.canvasWidth * this.canvasHeight;
+					this.pixels = new Uint8Array(totalPixels);
+					this.pixels.fill(0); // Черный по умолчанию
+
+					// Создаем ImageData для пакетного обновления
+					this.imageData = this.bufferCtx.createImageData(this.canvasWidth, this.canvasHeight);
+					// Заливаем черным (RGBA: 0,0,0,255)
+					const data = this.imageData.data;
+					for (let i = 0; i < data.length; i += 4) {
+						data[i] = 0;     // R
+						data[i + 1] = 0; // G
+						data[i + 2] = 0; // B
+						data[i + 3] = 255; // A
+					}
+					this.bufferCtx.putImageData(this.imageData, 0, 0);
 
 					// Устанавливаем режим пиксельной графики
 					this.bufferCtx.imageSmoothingEnabled = false;
 					this.ctx.imageSmoothingEnabled = false;
+				}
+
+				// Конвертация цвета из индекса палитры в RGBA
+				colorIndexToRGBA(colorIndex) {
+					const colors = this.getColorPalette();
+					const hex = colors[colorIndex] || colors[0];
+					// Парсим hex (#RRGGBB) в RGB
+					const r = parseInt(hex.slice(1, 3), 16);
+					const g = parseInt(hex.slice(3, 5), 16);
+					const b = parseInt(hex.slice(5, 7), 16);
+					return [r, g, b, 255];
+				}
+
+				// Обновление пикселя в ImageData
+				updatePixelInImageData(x, y, colorIndex) {
+					if (!this.imageData || x < 0 || x >= this.canvasWidth || y < 0 || y >= this.canvasHeight) return;
+					
+					const index = (y * this.canvasWidth + x) * 4;
+					const [r, g, b] = this.colorIndexToRGBA(colorIndex);
+					
+					this.imageData.data[index] = r;
+					this.imageData.data[index + 1] = g;
+					this.imageData.data[index + 2] = b;
+					this.imageData.data[index + 3] = 255;
 				}
 
 				// Оптимизируем функцию render:
@@ -1884,21 +1951,6 @@
 
 					if (bufferWidth <= 0 || bufferHeight <= 0) return;
 
-					// Временный canvas для масштабирования
-					const tempCanvas = document.createElement("canvas");
-					tempCanvas.width = bufferWidth;
-					tempCanvas.height = bufferHeight;
-					const tempCtx = tempCanvas.getContext("2d");
-
-					// ВЫКЛЮЧАЕМ сглаживание для пиксельной графики
-					tempCtx.imageSmoothingEnabled = false;
-					tempCtx.mozImageSmoothingEnabled = false;
-					tempCtx.webkitImageSmoothingEnabled = false;
-					tempCtx.msImageSmoothingEnabled = false;
-
-					// Копируем область из буфера
-					tempCtx.drawImage(this.canvasBuffer, visibleMinX, visibleMinY, bufferWidth, bufferHeight, 0, 0, bufferWidth, bufferHeight);
-
 					// Координаты на экране
 					const screenX = (visibleMinX - this.camera.x) * this.camera.zoom;
 					const screenY = (visibleMinY - this.camera.y) * this.camera.zoom;
@@ -1912,7 +1964,8 @@
 					this.ctx.msImageSmoothingEnabled = false;
 
 					// Рисуем масштабированную область
-					this.ctx.drawImage(tempCanvas, 0, 0, bufferWidth, bufferHeight, screenX, screenY, screenWidth, screenHeight);
+					// Важно: без промежуточных canvas (это сильно экономит CPU/GPU и аллокации)
+					this.ctx.drawImage(this.canvasBuffer, visibleMinX, visibleMinY, bufferWidth, bufferHeight, screenX, screenY, screenWidth, screenHeight);
 
 					// Обновляем миникарту
 					this.updateMinimap();
@@ -1920,6 +1973,14 @@
 
 				updateMinimap() {
 					if (!this.showMinimap || !this.minimapCtx || !this.bufferCtx) return;
+
+					// Троттлинг миникарты — рисовать её каждый render слишком дорого
+					if (this.minimapFps === undefined) this.minimapFps = 10;
+					if (this.lastMinimapUpdate === undefined) this.lastMinimapUpdate = 0;
+					const now = performance.now();
+					const minInterval = 1000 / this.minimapFps;
+					if (now - this.lastMinimapUpdate < minInterval) return;
+					this.lastMinimapUpdate = now;
 
 					// Очищаем миникарту
 					this.minimapCtx.fillStyle = "#1a1a1a";
@@ -2210,6 +2271,7 @@
 							this.canvasHeight = data.height || 800;
 							this.totalChunks = data.totalChunks || 1;
 							this.loadedChunks = new Set();
+							this.loadedChunkCount = 0; // Сбрасываем счетчик при новой загрузке
 
 							// Создаем буфер с правильным размером
 							this.initCanvasBuffer();
@@ -2344,23 +2406,36 @@
 
 				// Упрощенная processBinaryChunk:
 				processBinaryChunk(binaryData) {
-					if (!this.bufferCtx) return;
+					if (!this.bufferCtx || !this.pixels || !this.imageData) return;
 
 					const uint8Array = new Uint8Array(binaryData);
-					const colors = this.getColorPalette();
+					const chunkStart = this.lastChunkStart || 0;
+					const chunkSize = uint8Array.length;
 
-					for (let i = 0; i < uint8Array.length; i++) {
-						const globalIndex = this.lastChunkStart + i;
+					// Обновляем Uint8Array и ImageData пакетно
+					for (let i = 0; i < chunkSize; i++) {
+						const globalIndex = chunkStart + i;
+						if (globalIndex >= this.pixels.length) break;
+
 						const x = globalIndex % this.canvasWidth;
 						const y = Math.floor(globalIndex / this.canvasWidth);
 						const color = uint8Array[i];
 
-						if (color !== 0) {
-							this.pixels.set(`${x},${y}`, color);
-							this.bufferCtx.fillStyle = colors[color] || colors[0];
-							this.bufferCtx.fillRect(x, y, 1, 1);
-						}
+						// Обновляем Uint8Array
+						this.pixels[globalIndex] = color;
+
+						// Обновляем ImageData (даже если цвет 0 - черный)
+						this.updatePixelInImageData(x, y, color);
 					}
+
+					// Применяем изменения к буферу пакетно
+					// Оптимизация: применяем весь ImageData каждые N чанков или для больших чанков
+					// Это быстрее чем вычислять и копировать отдельные области
+					if (this.loadedChunkCount % 5 === 0 || chunkSize > 5000) {
+						// Применяем весь буфер целиком (быстро и просто)
+						this.bufferCtx.putImageData(this.imageData, 0, 0);
+					}
+					// Для остальных чанков изменения уже в imageData, применим их позже
 
 					this.loadedChunkCount++;
 
@@ -2370,9 +2445,9 @@
 						this.updateLoader(`Loading... ${progress}%`, progress);
 					}
 
-					// Рендерим каждые 5 чанков
+					// Рендерим каждые 5 чанков (scheduleRender вместо render для оптимизации)
 					if (this.loadedChunkCount % 5 === 0) {
-						this.render();
+						this.scheduleRender();
 					}
 				}
 
@@ -2413,8 +2488,13 @@
 				handleCanvasComplete() {
 					console.log("✅ Canvas loading complete!");
 
+					// Применяем финальный ImageData к буферу (на случай если остались непримененные изменения)
+					if (this.imageData && this.bufferCtx) {
+						this.bufferCtx.putImageData(this.imageData, 0, 0);
+					}
+
 					// Финальный рендер
-					this.render();
+					this.scheduleRender();
 
 					if (!this.quietReconnect) {
 						// Первоначальная загрузка - показываем лоадер
@@ -2435,14 +2515,14 @@
 						this.camera.y = this.canvasHeight / 2 - this.canvas.height / this.camera.zoom / 2;
 						this.clampCamera();
 						this.updateZoomInfo();
-						this.render();
+						this.scheduleRender();
 					}
 				}
 
 				handlePixelUpdate(data) {
 					const { x, y, color } = data;
 					this.setPixel(x, y, color);
-					this.render();
+					this.scheduleRender();
 				}
 
 				updateStatus(status, text) {
