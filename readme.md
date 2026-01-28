@@ -33,7 +33,7 @@
 ## 🖼️ Скриншоты
 
 ```
-[screen.png]
+![скриншот](https://github.com/Ge1o1Ge/PixelBattle-Wallpaper/blob/main/screen.png)
 ```
 
 ## 🚀 Быстрый старт
