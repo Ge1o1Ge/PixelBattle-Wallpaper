@@ -1,0 +1,1326 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PixelBattle Wallpaper</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      body {
+        overflow: hidden;
+        width: 100vw;
+        height: 100vh;
+        background: #000;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        cursor: crosshair;
+      }
+
+      #mainCanvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+      }
+
+      /* Статус бар */
+      #statusBar {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        z-index: 100;
+        backdrop-filter: blur(4px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        transition: opacity 0.3s;
+      }
+
+      #statusBar:hover {
+        background: rgba(0, 0, 0, 0.85);
+      }
+
+      .status-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+      }
+
+      .connected .status-dot {
+        background: #4caf50;
+      }
+      .connecting .status-dot {
+        background: #ff9800;
+      }
+      .disconnected .status-dot {
+        background: #f44336;
+      }
+
+      #cooldownTimer {
+        color: #ff9800;
+        font-weight: bold;
+      }
+
+      /* Улучшенная панель цветов */
+      #colorPalette {
+        position: absolute;
+        top: 50px;
+        right: 10px;
+        width: 40px;
+        background: rgba(0, 0, 0, 0.8);
+        border-radius: 8px;
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        z-index: 100;
+        overflow: hidden;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      }
+
+      #colorPalette.expanded {
+        width: 160px;
+        padding: 10px;
+      }
+
+      .palette-header {
+        padding: 8px;
+        cursor: pointer;
+        text-align: center;
+        color: white;
+        font-size: 12px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(0, 0, 0, 0.6);
+        transition: background 0.3s;
+      }
+
+      .palette-header:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .palette-content {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease;
+      }
+
+      #colorPalette.expanded .palette-content {
+        max-height: 320px;
+        padding-top: 10px;
+      }
+
+      .palette-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 5px;
+      }
+
+      .color-swatch {
+        width: 30px;
+        height: 30px;
+        border-radius: 6px;
+        cursor: pointer;
+        border: 2px solid transparent;
+        transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+      }
+
+      .color-swatch:hover {
+        transform: scale(1.15);
+      }
+
+      .color-swatch.selected {
+        border-color: white;
+        transform: scale(1.1);
+        box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
+      }
+
+      /* Пипетка (цвет под курсором) */
+      #colorPickerPreview {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        border: 3px solid white;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        z-index: 100;
+        pointer-events: none;
+        opacity: 0.8;
+      }
+
+      #colorPickerHex {
+        position: absolute;
+        bottom: 25px;
+        left: 70px;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 5px 10px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-family: monospace;
+        pointer-events: none;
+      }
+
+      /* Лупа/зум */
+      #zoomPreview {
+        position: absolute;
+        width: 200px;
+        height: 200px;
+        border: 2px solid white;
+        border-radius: 4px;
+        background: rgba(0, 0, 0, 0.9);
+        backdrop-filter: blur(2px);
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+        z-index: 150;
+        pointer-events: none;
+        display: none;
+        overflow: hidden;
+      }
+
+      #zoomCanvas {
+        width: 100%;
+        height: 100%;
+        image-rendering: pixelated;
+      }
+
+      .zoom-grid {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: repeating-linear-gradient(
+            90deg,
+            rgba(255, 255, 255, 0.1) 0,
+            rgba(255, 255, 255, 0.1) 1px,
+            transparent 1px,
+            transparent calc(100% / 10)
+          ),
+          repeating-linear-gradient(
+            0deg,
+            rgba(255, 255, 255, 0.1) 0,
+            rgba(255, 255, 255, 0.1) 1px,
+            transparent 1px,
+            transparent calc(100% / 10)
+          );
+        pointer-events: none;
+      }
+
+      #zoomPosition {
+        position: absolute;
+        bottom: -25px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        color: white;
+        font-size: 12px;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 2px 5px;
+        border-radius: 3px;
+      }
+
+      /* Туториал и уведомления */
+      #tutorial {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.9);
+        color: white;
+        padding: 20px;
+        border-radius: 12px;
+        max-width: 400px;
+        text-align: center;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        z-index: 1000;
+        animation: fadeIn 0.5s;
+      }
+
+      .notification {
+        position: absolute;
+        top: 60px;
+        right: 10px;
+        background: rgba(0, 0, 0, 0.85);
+        color: white;
+        padding: 12px 16px;
+        border-radius: 8px;
+        backdrop-filter: blur(8px);
+        border-left: 4px solid #4caf50;
+        z-index: 100;
+        animation: slideInRight 0.3s, fadeOut 0.3s 2.7s;
+        max-width: 300px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      }
+
+      .notification.error {
+        border-left-color: #f44336;
+      }
+
+      .notification.warning {
+        border-left-color: #ff9800;
+      }
+
+      /* Анимации */
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      @keyframes slideInRight {
+        from {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+
+      @keyframes fadeOut {
+        to {
+          opacity: 0;
+        }
+      }
+
+      /* Лоадер */
+      #loader {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        color: white;
+        z-index: 1000;
+      }
+
+      .spinner {
+        border: 4px solid rgba(255, 255, 255, 0.3);
+        border-top: 4px solid #4caf50;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 15px;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* Скрытые элементы */
+      .hidden {
+        display: none !important;
+      }
+
+      /* Настройки */
+      #settingsPanel {
+        position: absolute;
+        bottom: 20px;
+        right: 60px;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 10px;
+        border-radius: 8px;
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        z-index: 90;
+        opacity: 0.3;
+        transition: opacity 0.3s;
+      }
+
+      #settingsPanel:hover {
+        opacity: 1;
+      }
+
+      .settings-item {
+        margin: 5px 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .settings-item label {
+        font-size: 12px;
+        min-width: 100px;
+      }
+
+      input[type="range"] {
+        width: 120px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="mainCanvas"></canvas>
+
+    <!-- Статус бар -->
+    <div id="statusBar" class="connected">
+      <div class="status-item">
+        <span class="status-dot"></span>
+        <span id="statusText">Connected</span>
+      </div>
+      <div class="status-item">
+        <span>Next:</span>
+        <span id="cooldownTimer">0s</span>
+      </div>
+      <div class="status-item">
+        <span>Online:</span>
+        <span id="onlineCount">0</span>
+      </div>
+    </div>
+
+    <!-- Улучшенная палитра цветов -->
+    <div id="colorPalette">
+      <div class="palette-header" id="togglePalette">🎨</div>
+      <div class="palette-content">
+        <div class="palette-grid">
+          <!-- Цвета будут добавлены скриптом -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Пипетка -->
+    <div id="colorPickerPreview"></div>
+    <div id="colorPickerHex">#000000</div>
+
+    <!-- Лупа/зум -->
+    <div id="zoomPreview">
+      <canvas id="zoomCanvas"></canvas>
+      <div class="zoom-grid"></div>
+      <div id="zoomPosition">0, 0</div>
+    </div>
+
+    <!-- Панель настроек -->
+    <div id="settingsPanel">
+      <div class="settings-item">
+        <label for="gridSize">Grid Size:</label>
+        <input type="range" id="gridSize" min="1" max="20" value="6" step="1" />
+        <span id="gridSizeValue">6px</span>
+      </div>
+      <div class="settings-item">
+        <label for="zoomEnabled">Zoom:</label>
+        <input type="checkbox" id="zoomEnabled" checked />
+      </div>
+      <div class="settings-item">
+        <label for="snapToGrid">Snap to Grid:</label>
+        <input type="checkbox" id="snapToGrid" checked />
+      </div>
+    </div>
+
+    <!-- Туториал -->
+    <div id="tutorial" class="hidden">
+      <h3>🎨 PixelBattle Wallpaper</h3>
+      <p>Interactive multiplayer pixel canvas for your desktop!</p>
+      <ul>
+        <li><strong>Click</strong> - Place pixel</li>
+        <li><strong>Right click</strong> - Pick color</li>
+        <li><strong>Ctrl+Click</strong> - Fill area</li>
+        <li><strong>Z</strong> - Toggle zoom</li>
+        <li><strong>C</strong> - Toggle color picker</li>
+        <li><strong>Esc</strong> - Hide interface</li>
+      </ul>
+      <button id="closeTutorial">Start Drawing!</button>
+    </div>
+
+    <!-- Лоадер -->
+    <div id="loader">
+      <div class="spinner"></div>
+      <div>Connecting to PixelBattle server...</div>
+      <div
+        id="loaderStatus"
+        style="font-size: 12px; margin-top: 10px; opacity: 0.8"
+      >
+        Establishing connection
+      </div>
+    </div>
+
+    <script>
+      class PixelBattleWallpaper {
+        constructor() {
+          this.canvas = document.getElementById("mainCanvas");
+          this.ctx = this.canvas.getContext("2d");
+          this.ws = null;
+
+          // Настройки
+          this.gridSize = 4; // Размер сетки в экранных пикселях
+          this.canvasWidth = 800; // Увеличиваем виртуальный холст для лучшей детализации
+          this.canvasHeight = 450; // Сохраняем соотношение 16:9
+          this.cooldownTime = 1000; // 30 секунд
+          this.zoomEnabled = true;
+          this.snapToGrid = true;
+          this.zoomLevel = 10; // Увеличение лупы 
+
+          // Состояние
+          this.grid = [];
+          this.lastClickTime = 0;
+          this.selectedColor = 0;
+          this.isConnected = false;
+          this.usersOnline = 0;
+
+          // Цвет под курсором
+          this.pickedColor = null;
+          this.showColorPicker = true;
+
+          // Панель управления
+          this.uiVisible = true;
+
+          // Настройки сервера
+          this.serverConfig = {
+            host: "localhost",
+            port: 8080,
+            secure: false,
+            path: "/ws",
+          };
+
+          // Инициализация
+          this.init();
+        }
+
+        init() {
+          // Инициализация холста
+          this.resizeCanvas();
+          window.addEventListener("resize", () => this.resizeCanvas());
+
+          // Инициализация сетки
+          this.initGrid();
+
+          // Инициализация палитры
+          this.initPalette();
+
+          // Инициализация лупы
+          this.initZoom();
+
+          // Настройка событий
+          this.setupEventListeners();
+
+          // Показать туториал при первом запуске
+          if (!localStorage.getItem("pixelwall_tutorial_shown")) {
+            setTimeout(() => {
+              document.getElementById("tutorial").classList.remove("hidden");
+              localStorage.setItem("pixelwall_tutorial_shown", "true");
+            }, 1000);
+          }
+
+          // Подключиться к серверу
+          this.connectToServer();
+
+          // Запуск анимации
+          this.animate();
+        }
+
+        initGrid() {
+          // Создаем пустую сетку
+          this.grid = new Array(this.canvasWidth * this.canvasHeight).fill(0);
+          this.drawTestPattern();
+        }
+
+        drawTestPattern() {
+          // Шахматная доска
+          for (let x = 0; x < this.canvasWidth; x++) {
+            for (let y = 0; y < this.canvasHeight; y++) {
+              if ((x + y) % 8 === 0) {
+                const index = y * this.canvasWidth + x;
+                this.grid[index] = 7; // Серый
+              }
+            }
+          }
+
+          // Рисуем текст
+          const text = "PIXEL BATTLE";
+          const startX = Math.floor(this.canvasWidth / 2) - 30;
+          const startY = Math.floor(this.canvasHeight / 2) - 5;
+
+          const font = [
+            // P
+            [1, 1, 1, 1, 0],
+            [1, 0, 0, 0, 1],
+            [1, 1, 1, 1, 0],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            // I
+            [1, 1, 1, 1, 1],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [1, 1, 1, 1, 1],
+            // X
+            [1, 0, 0, 0, 1],
+            [0, 1, 0, 1, 0],
+            [0, 0, 1, 0, 0],
+            [0, 1, 0, 1, 0],
+            [1, 0, 0, 0, 1],
+            // E
+            [1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0],
+            [1, 1, 1, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1],
+            // L
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1],
+          ];
+
+          for (let char = 0; char < 12; char++) {
+            for (let x = 0; x < 5; x++) {
+              for (let y = 0; y < 5; y++) {
+                if (char < 12) {
+                  const gridX = startX + char * 6 + x;
+                  const gridY = startY + y;
+                  if (font[y] && font[y][x]) {
+                    const index = gridY * this.canvasWidth + gridX;
+                    if (index >= 0 && index < this.grid.length) {
+                      this.grid[index] = (char % 16) + 1;
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          this.renderGrid();
+        }
+
+        getColorPalette() {
+          return [
+            "#000000",
+            "#1A1A1A",
+            "#333333",
+            "#4D4D4D",
+            "#666666",
+            "#808080",
+            "#999999",
+            "#B3B3B3",
+            "#CCCCCC",
+            "#E6E6E6",
+            "#FFFFFF",
+            "#FF0000",
+            "#FF3300",
+            "#FF6600",
+            "#FF9900",
+            "#FFCC00",
+            "#FFFF00",
+            "#CCFF00",
+            "#99FF00",
+            "#66FF00",
+            "#33FF00",
+            "#00FF00",
+            "#00FF33",
+            "#00FF66",
+            "#00FF99",
+            "#00FFCC",
+            "#00FFFF",
+            "#00CCFF",
+            "#0099FF",
+            "#0066FF",
+            "#0033FF",
+            "#0000FF",
+            "#3300FF",
+            "#6600FF",
+            "#9900FF",
+            "#CC00FF",
+            "#FF00FF",
+            "#FF00CC",
+            "#FF0099",
+            "#FF0066",
+          ];
+        }
+
+        initPalette() {
+          const paletteGrid = document.querySelector(".palette-grid");
+          const colors = this.getColorPalette();
+
+          colors.forEach((color, index) => {
+            const swatch = document.createElement("div");
+            swatch.className = "color-swatch";
+            if (index === this.selectedColor) {
+              swatch.classList.add("selected");
+            }
+            swatch.style.backgroundColor = color;
+            swatch.dataset.index = index;
+
+            swatch.addEventListener("click", () => {
+              this.selectedColor = index;
+              document.querySelectorAll(".color-swatch").forEach((s) => {
+                s.classList.remove("selected");
+              });
+              swatch.classList.add("selected");
+            });
+
+            paletteGrid.appendChild(swatch);
+          });
+
+          // Переключение палитры
+          document
+            .getElementById("togglePalette")
+            .addEventListener("click", () => {
+              const palette = document.getElementById("colorPalette");
+              palette.classList.toggle("expanded");
+              document.getElementById("togglePalette").textContent =
+                palette.classList.contains("expanded") ? "✕" : "🎨";
+            });
+        }
+
+        initZoom() {
+          this.zoomCanvas = document.getElementById("zoomCanvas");
+          this.zoomCtx = this.zoomCanvas.getContext("2d");
+          this.zoomCanvas.width = 200;
+          this.zoomCanvas.height = 200;
+        }
+
+        resizeCanvas() {
+          this.canvas.width = window.innerWidth;
+          this.canvas.height = window.innerHeight;
+          this.renderGrid();
+        }
+
+        setupEventListeners() {
+          // Клик по холсту
+          this.canvas.addEventListener("click", (e) => {
+            this.handleCanvasClick(e);
+          });
+
+          // Правый клик для пипетки
+          this.canvas.addEventListener("contextmenu", (e) => {
+            e.preventDefault();
+            this.handleColorPick(e);
+          });
+
+          // Движение мыши для лупы
+          this.canvas.addEventListener("mousemove", (e) => {
+            this.handleMouseMove(e);
+          });
+
+          // Клавиши
+          document.addEventListener("keydown", (e) => {
+            this.handleKeyDown(e);
+          });
+
+          // Настройки
+          document.getElementById("gridSize").addEventListener("input", (e) => {
+            this.gridSize = parseInt(e.target.value);
+            document.getElementById("gridSizeValue").textContent =
+              this.gridSize + "px";
+            this.renderGrid();
+          });
+
+          document
+            .getElementById("zoomEnabled")
+            .addEventListener("change", (e) => {
+              this.zoomEnabled = e.target.checked;
+              document.getElementById("zoomPreview").style.display = this
+                .zoomEnabled
+                ? "block"
+                : "none";
+            });
+
+          document
+            .getElementById("snapToGrid")
+            .addEventListener("change", (e) => {
+              this.snapToGrid = e.target.checked;
+            });
+
+          // Закрыть туториал
+          document
+            .getElementById("closeTutorial")
+            .addEventListener("click", () => {
+              document.getElementById("tutorial").classList.add("hidden");
+            });
+
+          // Перемещение цветовой палитры
+          this.makeDraggable("colorPalette");
+        }
+
+        makeDraggable(elementId) {
+          const element = document.getElementById(elementId);
+          let isDragging = false;
+          let startX, startY, startLeft, startTop;
+
+          element.style.position = "absolute";
+          element.style.cursor = "move";
+
+          element.addEventListener("mousedown", (e) => {
+            if (e.target.classList.contains("palette-header")) {
+              isDragging = true;
+              startX = e.clientX;
+              startY = e.clientY;
+              startLeft = element.offsetLeft;
+              startTop = element.offsetTop;
+              e.preventDefault();
+            }
+          });
+
+          document.addEventListener("mousemove", (e) => {
+            if (isDragging) {
+              const dx = e.clientX - startX;
+              const dy = e.clientY - startY;
+              element.style.left = startLeft + dx + "px";
+              element.style.top = startTop + dy + "px";
+              element.style.right = "auto";
+            }
+          });
+
+          document.addEventListener("mouseup", () => {
+            isDragging = false;
+          });
+        }
+
+        handleCanvasClick(e) {
+          const now = Date.now();
+          const timeSinceLastClick = now - this.lastClickTime;
+
+          // Проверка кулдауна
+          if (timeSinceLastClick < this.cooldownTime) {
+            const secondsLeft = Math.ceil(
+              (this.cooldownTime - timeSinceLastClick) / 1000
+            );
+            this.showNotification(
+              `Wait ${secondsLeft}s before placing next pixel`,
+              "warning"
+            );
+            return;
+          }
+
+          // Получаем координаты
+          const rect = this.canvas.getBoundingClientRect();
+          const x = Math.floor((e.clientX - rect.left) / this.gridSize);
+          const y = Math.floor((e.clientY - rect.top) / this.gridSize);
+
+          // Пересчитываем в координаты сетки
+          const gridX = Math.floor(
+            (x * this.canvasWidth) /
+              Math.floor(this.canvas.width / this.gridSize)
+          );
+          const gridY = Math.floor(
+            (y * this.canvasHeight) /
+              Math.floor(this.canvas.height / this.gridSize)
+          );
+
+          // Привязка к сетке
+          const finalGridX = this.snapToGrid
+            ? Math.round(gridX / 2) * 2
+            : gridX;
+          const finalGridY = this.snapToGrid
+            ? Math.round(gridY / 2) * 2
+            : gridY;
+
+          // Проверка границ
+          if (
+            finalGridX < 0 ||
+            finalGridX >= this.canvasWidth ||
+            finalGridY < 0 ||
+            finalGridY >= this.canvasHeight
+          ) {
+            return;
+          }
+
+          // Обновляем локально
+          const index = finalGridY * this.canvasWidth + finalGridX;
+          this.grid[index] = this.selectedColor;
+          this.lastClickTime = now;
+          this.updateCooldownTimer();
+
+          // Отрисовываем
+          this.drawPixel(finalGridX, finalGridY, this.selectedColor);
+
+          // Отправляем на сервер
+          if (
+            this.isConnected &&
+            this.ws &&
+            this.ws.readyState === WebSocket.OPEN
+          ) {
+            this.ws.send(
+              JSON.stringify({
+                type: "placePixel",
+                x: finalGridX,
+                y: finalGridY,
+                color: this.selectedColor,
+                timestamp: now,
+              })
+            );
+
+            this.showNotification(
+              `Pixel placed at (${finalGridX}, ${finalGridY})`
+            );
+          }
+        }
+
+        handleColorPick(e) {
+          e.preventDefault();
+          const rect = this.canvas.getBoundingClientRect();
+          const x = Math.floor((e.clientX - rect.left) / this.gridSize);
+          const y = Math.floor((e.clientY - rect.top) / this.gridSize);
+
+          const gridX = Math.floor(
+            (x * this.canvasWidth) /
+              Math.floor(this.canvas.width / this.gridSize)
+          );
+          const gridY = Math.floor(
+            (y * this.canvasHeight) /
+              Math.floor(this.canvas.height / this.gridSize)
+          );
+
+          if (
+            gridX >= 0 &&
+            gridX < this.canvasWidth &&
+            gridY >= 0 &&
+            gridY < this.canvasHeight
+          ) {
+            const index = gridY * this.canvasWidth + gridX;
+            const colorIndex = this.grid[index];
+            const colors = this.getColorPalette();
+
+            this.selectedColor = colorIndex;
+            this.pickedColor = colors[colorIndex];
+
+            // Обновляем UI
+            document.querySelectorAll(".color-swatch").forEach((s) => {
+              s.classList.remove("selected");
+              if (parseInt(s.dataset.index) === colorIndex) {
+                s.classList.add("selected");
+              }
+            });
+
+            document.getElementById(
+              "colorPickerPreview"
+            ).style.backgroundColor = this.pickedColor;
+            document.getElementById("colorPickerHex").textContent =
+              this.pickedColor;
+
+            this.showNotification(`Color picked: ${this.pickedColor}`);
+          }
+        }
+
+        handleMouseMove(e) {
+          const rect = this.canvas.getBoundingClientRect();
+          const mouseX = e.clientX - rect.left;
+          const mouseY = e.clientY - rect.top;
+
+          // Обновляем лупу
+          if (this.zoomEnabled) {
+            this.updateZoom(mouseX, mouseY);
+          }
+
+          // Обновляем пипетку
+          if (this.showColorPicker) {
+            this.updateColorPicker(mouseX, mouseY);
+          }
+        }
+
+        updateZoom(mouseX, mouseY) {
+          if (!this.zoomCtx) return;
+          const zoom = document.getElementById("zoomPreview");
+          const zoomSize = 200;
+          const zoomOffset = 20;
+
+          // Позиция лупы
+          let zoomX = mouseX + zoomOffset;
+          let zoomY = mouseY + zoomOffset;
+
+          // Если лупа выходит за пределы экрана, смещаем
+          if (zoomX + zoomSize > window.innerWidth) {
+            zoomX = mouseX - zoomSize - zoomOffset;
+          }
+          if (zoomY + zoomSize > window.innerHeight) {
+            zoomY = mouseY - zoomSize - zoomOffset;
+          }
+
+          zoom.style.left = zoomX + "px";
+          zoom.style.top = zoomY + "px";
+          zoom.style.display = "block";
+
+          // Отрисовка увеличенной области
+          const zoomRectSize = zoomSize / this.zoomLevel;
+          const startX = Math.max(0, mouseX - zoomRectSize / 2);
+          const startY = Math.max(0, mouseY - zoomRectSize / 2);
+
+          // Очищаем zoom canvas
+          this.zoomCtx.fillStyle = "#000";
+          this.zoomCtx.fillRect(0, 0, zoomSize, zoomSize);
+
+          // Рисуем увеличенную область
+          this.zoomCtx.imageSmoothingEnabled = false;
+
+          // Создаем временный канвас для увеличения
+          const tempCanvas = document.createElement("canvas");
+          const tempCtx = tempCanvas.getContext("2d");
+          tempCanvas.width = zoomRectSize;
+          tempCanvas.height = zoomRectSize;
+
+          // Копируем область с основного канваса
+          tempCtx.drawImage(
+            this.canvas,
+            startX,
+            startY,
+            zoomRectSize,
+            zoomRectSize,
+            0,
+            0,
+            zoomRectSize,
+            zoomRectSize
+          );
+
+          // Масштабируем на zoom canvas
+          this.zoomCtx.drawImage(
+            tempCanvas,
+            0,
+            0,
+            zoomRectSize,
+            zoomRectSize,
+            0,
+            0,
+            zoomSize,
+            zoomSize
+          );
+
+          // Координаты в сетке
+          const gridX = Math.floor(startX / this.gridSize);
+          const gridY = Math.floor(startY / this.gridSize);
+          const finalGridX = Math.floor(
+            (gridX * this.canvasWidth) /
+              Math.floor(this.canvas.width / this.gridSize)
+          );
+          const finalGridY = Math.floor(
+            (gridY * this.canvasHeight) /
+              Math.floor(this.canvas.height / this.gridSize)
+          );
+
+          document.getElementById(
+            "zoomPosition"
+          ).textContent = `${finalGridX}, ${finalGridY}`;
+
+          // Рисуем перекрестие
+          this.zoomCtx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+          this.zoomCtx.lineWidth = 1;
+          this.zoomCtx.beginPath();
+          this.zoomCtx.moveTo(zoomSize / 2, 0);
+          this.zoomCtx.lineTo(zoomSize / 2, zoomSize);
+          this.zoomCtx.moveTo(0, zoomSize / 2);
+          this.zoomCtx.lineTo(zoomSize, zoomSize / 2);
+          this.zoomCtx.stroke();
+        }
+
+        updateColorPicker(mouseX, mouseY) {
+          const gridX = Math.floor(mouseX / this.gridSize);
+          const gridY = Math.floor(mouseY / this.gridSize);
+
+          const finalGridX = Math.floor(
+            (gridX * this.canvasWidth) /
+              Math.floor(this.canvas.width / this.gridSize)
+          );
+          const finalGridY = Math.floor(
+            (gridY * this.canvasHeight) /
+              Math.floor(this.canvas.height / this.gridSize)
+          );
+
+          if (
+            finalGridX >= 0 &&
+            finalGridX < this.canvasWidth &&
+            finalGridY >= 0 &&
+            finalGridY < this.canvasHeight
+          ) {
+            const index = finalGridY * this.canvasWidth + finalGridX;
+            const colorIndex = this.grid[index];
+            const colors = this.getColorPalette();
+            const color = colors[colorIndex];
+
+            document.getElementById(
+              "colorPickerPreview"
+            ).style.backgroundColor = color;
+            document.getElementById("colorPickerHex").textContent = color;
+          }
+        }
+
+        handleKeyDown(e) {
+          switch (e.key.toLowerCase()) {
+            case "z":
+              this.zoomEnabled = !this.zoomEnabled;
+              document.getElementById("zoomPreview").style.display = this
+                .zoomEnabled
+                ? "block"
+                : "none";
+              this.showNotification(
+                `Zoom ${this.zoomEnabled ? "enabled" : "disabled"}`
+              );
+              break;
+
+            case "c":
+              this.showColorPicker = !this.showColorPicker;
+              document.getElementById("colorPickerPreview").style.display = this
+                .showColorPicker
+                ? "block"
+                : "none";
+              document.getElementById("colorPickerHex").style.display = this
+                .showColorPicker
+                ? "block"
+                : "none";
+              this.showNotification(
+                `Color picker ${this.showColorPicker ? "enabled" : "disabled"}`
+              );
+              break;
+
+            case "escape":
+              this.uiVisible = !this.uiVisible;
+              document.getElementById("statusBar").style.display = this
+                .uiVisible
+                ? "flex"
+                : "none";
+              document.getElementById("colorPalette").style.display = this
+                .uiVisible
+                ? "block"
+                : "none";
+              document.getElementById("settingsPanel").style.display = this
+                .uiVisible
+                ? "block"
+                : "none";
+              break;
+
+            case "control":
+              if (e.shiftKey) {
+                // Ctrl+Shift+Click для заливки области
+                this.canvas.addEventListener(
+                  "click",
+                  this.handleFillArea.bind(this),
+                  { once: true }
+                );
+              }
+              break;
+          }
+        }
+
+        drawPixel(x, y, colorIndex) {
+          const colors = this.getColorPalette();
+          const color = colors[colorIndex] || colors[0];
+
+          // Рассчитываем размер и позицию
+          const pixelWidth = this.gridSize;
+          const pixelHeight = this.gridSize;
+
+          const posX = Math.floor(
+            x *
+              pixelWidth *
+              (this.canvas.width / (this.canvasWidth * this.gridSize))
+          );
+          const posY = Math.floor(
+            y *
+              pixelHeight *
+              (this.canvas.height / (this.canvasHeight * this.gridSize))
+          );
+
+          this.ctx.fillStyle = color;
+          this.ctx.fillRect(posX, posY, pixelWidth, pixelHeight);
+
+          // Обновляем лупу если нужно
+          if (this.zoomEnabled) {
+            this.updateZoom(posX + pixelWidth / 2, posY + pixelHeight / 2);
+          }
+        }
+
+        renderGrid() {
+          // Очищаем холст
+          this.ctx.fillStyle = "#000000";
+          this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+          // Рисуем сетку (опционально)
+          if (this.gridSize > 3) {
+            this.ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+            this.ctx.lineWidth = 1;
+
+            for (let x = 0; x < this.canvas.width; x += this.gridSize) {
+              this.ctx.beginPath();
+              this.ctx.moveTo(x, 0);
+              this.ctx.lineTo(x, this.canvas.height);
+              this.ctx.stroke();
+            }
+
+            for (let y = 0; y < this.canvas.height; y += this.gridSize) {
+              this.ctx.beginPath();
+              this.ctx.moveTo(0, y);
+              this.ctx.lineTo(this.canvas.width, y);
+              this.ctx.stroke();
+            }
+          }
+
+          // Рисуем все пиксели
+          for (let i = 0; i < this.grid.length; i++) {
+            if (this.grid[i] !== 0) {
+              const x = i % this.canvasWidth;
+              const y = Math.floor(i / this.canvasWidth);
+              this.drawPixel(x, y, this.grid[i]);
+            }
+          }
+        }
+
+        connectToServer() {
+          const wsUrl = `ws://${this.serverConfig.host}:${this.serverConfig.port}${this.serverConfig.path}`;
+          // document.getElementById("serverUrl").textContent = wsUrl;
+
+          this.updateStatus("connecting", "Connecting...");
+
+          try {
+            this.ws = new WebSocket(wsUrl);
+
+            this.ws.onopen = () => {
+              this.isConnected = true;
+              this.updateStatus("connected", "Connected");
+              this.showNotification("Connected to PixelBattle server");
+              document.getElementById("loader").classList.add("hidden");
+              this.ws.send(JSON.stringify({ type: "getCanvas" }));
+            };
+
+            this.ws.onmessage = (event) => {
+              try {
+                const data = JSON.parse(event.data);
+                this.handleServerMessage(data);
+              } catch (error) {
+                console.error("Error parsing server message:", error);
+              }
+            };
+
+            this.ws.onclose = () => {
+              this.isConnected = false;
+              this.updateStatus("disconnected", "Disconnected");
+              this.showNotification("Disconnected from server", "error");
+            };
+
+            this.ws.onerror = (error) => {
+              console.error("WebSocket error:", error);
+              this.updateStatus("disconnected", "Connection error");
+            };
+          } catch (error) {
+            console.error("Failed to create WebSocket:", error);
+            this.updateStatus("disconnected", "Connection failed");
+            document.getElementById("loaderStatus").textContent =
+              "Cannot connect to server. Running in offline mode.";
+            setTimeout(() => {
+              document.getElementById("loader").classList.add("hidden");
+            }, 2000);
+          }
+        }
+
+        handleServerMessage(data) {
+          switch (data.type) {
+            case "canvasState":
+              this.loadCanvasState(data.canvas);
+              break;
+
+            case "pixelUpdate":
+              if (
+                data.x >= 0 &&
+                data.x < this.canvasWidth &&
+                data.y >= 0 &&
+                data.y < this.canvasHeight
+              ) {
+                const index = data.y * this.canvasWidth + data.x;
+                this.grid[index] = data.color;
+                this.drawPixel(data.x, data.y, data.color);
+              }
+              break;
+
+            case "onlineCount":
+              this.usersOnline = data.count;
+              document.getElementById("onlineCount").textContent = data.count;
+              break;
+          }
+        }
+
+        loadCanvasState(canvasData) {
+          if (
+            canvasData &&
+            canvasData.width &&
+            canvasData.height &&
+            canvasData.pixels
+          ) {
+            this.grid = canvasData.pixels.slice();
+            this.renderGrid();
+          }
+        }
+
+        updateStatus(status, text) {
+          const statusBar = document.getElementById("statusBar");
+          const statusText = document.getElementById("statusText");
+          statusBar.className = status;
+          statusText.textContent = text;
+        }
+
+        updateCooldownTimer() {
+          const timerElement = document.getElementById("cooldownTimer");
+          const updateTimer = () => {
+            const now = Date.now();
+            const timeLeft = Math.max(
+              0,
+              this.cooldownTime - (now - this.lastClickTime)
+            );
+
+            if (timeLeft <= 0) {
+              timerElement.textContent = "Ready!";
+              timerElement.style.color = "#4CAF50";
+            } else {
+              const seconds = Math.ceil(timeLeft / 1000);
+              timerElement.textContent = `${seconds}s`;
+              timerElement.style.color = seconds <= 5 ? "#4CAF50" : "#FF9800";
+            }
+          };
+
+          updateTimer();
+          if (this.cooldownInterval) clearInterval(this.cooldownInterval);
+          this.cooldownInterval = setInterval(updateTimer, 1000);
+        }
+
+        showNotification(message, type = "info") {
+          const oldNotifications = document.querySelectorAll(".notification");
+          oldNotifications.forEach((n) => n.remove());
+
+          const notification = document.createElement("div");
+          notification.className = `notification ${type}`;
+          notification.textContent = message;
+          document.body.appendChild(notification);
+
+          setTimeout(() => notification.remove(), 3000);
+        }
+
+        animate() {
+          requestAnimationFrame(() => this.animate());
+        }
+      }
+
+      // Инициализация
+      window.addEventListener("load", () => {
+        window.pixelWall = new PixelBattleWallpaper();
+      });
+    </script>
+  </body>
+</html>

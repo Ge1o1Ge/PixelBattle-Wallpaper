@@ -1,0 +1,49 @@
+{
+	"description" : "PixelBattle - Interactive multiplayer wallpaper",
+	"file" : "pixelwall.html",
+	"general" : 
+	{
+		"properties" : 
+		{
+			"pixelSize" : 
+			{
+				"index" : 1,
+				"max" : 20,
+				"min" : 1,
+				"order" : 1,
+				"step" : 1,
+				"text" : "Pixel Size",
+				"type" : "slider",
+				"value" : 6
+			},
+			"serverUrl" : 
+			{
+				"index" : 0,
+				"order" : 0,
+				"text" : "Server URL",
+				"type" : "text",
+				"value" : "ws://localhost:8080"
+			},
+			"showPalette" : 
+			{
+				"index" : 2,
+				"order" : 2,
+				"text" : "Show Color Palette",
+				"type" : "bool",
+				"value" : true
+			},
+			"showStatus" : 
+			{
+				"index" : 3,
+				"order" : 3,
+				"text" : "Show Status Bar",
+				"type" : "bool",
+				"value" : true
+			}
+		}
+	},
+	"title" : "PixelBattle Wallpaper",
+	"type" : "Web",
+	"version" : 1,
+	"visibility" : "public"
+}

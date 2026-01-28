@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <h2>Тест PixelBattle Server</h2>
+    <div id="status">Проверка...</div>
+    
+    <script>
+        const ws = new WebSocket('ws://localhost:8080');
+        
+        ws.onopen = function() {
+            document.getElementById('status').innerHTML = 
+                '✅ Сервер работает! WebSocket подключен';
+            document.getElementById('status').style.color = 'green';
+            ws.close();
+        };
+        
+        ws.onerror = function() {
+            document.getElementById('status').innerHTML = 
+                '❌ Сервер не отвечает. Проверьте: <br>' +
+                '1. Запущен ли сервер<br>' +
+                '2. Правильный ли порт (8080)<br>' +
+                '3. Не блокирует ли брандмауэр';
+            document.getElementById('status').style.color = 'red';
+        };
+        
+        setTimeout(() => {
+            if (ws.readyState !== WebSocket.OPEN) {
+                document.getElementById('status').innerHTML = 
+                    '⏱️ Таймаут соединения. Сервер может быть выключен';
+                document.getElementById('status').style.color = 'orange';
+            }
+        }, 3000);
+    </script>
+</body>
+</html>
